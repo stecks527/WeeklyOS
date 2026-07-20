@@ -1,0 +1,895 @@
+/*************************************************
+ * 25 WEEKLYOS - STORAGE
+ * Version: 0.2.0
+ * Status: ACTIVE DEVELOPMENT
+ *
+ * WeeklyOS draft persistence and revision history.
+ *
+ * Current working drafts are stored in:
+ * Document Properties
+ *
+ * Revision snapshots are stored in:
+ * _WEEKLYOS_DRAFTS
+ *************************************************/
+
+
+/*************************************************
+ * SAVE DRAFT
+ *************************************************/
+
+function weeklyOSSaveDraft(draft) {
+  if (
+    !draft ||
+    !draft.id
+  ) {
+    throw new Error(
+      "WeeklyOS cannot save an invalid draft."
+    );
+  }
+
+  if (!draft.weekStart) {
+    throw new Error(
+      "WeeklyOS cannot save a draft without a week-start date."
+    );
+  }
+
+  const config =
+    weeklyOSGetConfig_();
+
+  const properties =
+    PropertiesService
+      .getDocumentProperties();
+
+  const weekStart =
+    weeklyOSDateKey_(
+      draft.weekStart
+    );
+
+  if (!weekStart) {
+    throw new Error(
+      "WeeklyOS could not determine the draft week."
+    );
+  }
+
+  draft.weekStart =
+    weekStart;
+
+  draft.updatedAt =
+    weeklyOSNowIso_();
+
+  if (!draft.createdAt) {
+    draft.createdAt =
+      draft.updatedAt;
+  }
+
+  if (!draft.revision) {
+    draft.revision = 1;
+  }
+
+  const draftPropertyKey =
+    weeklyOSDraftPropertyKey_(
+      weekStart
+    );
+
+  const serializedDraft =
+    JSON.stringify(
+      draft
+    );
+
+  properties.setProperty(
+    draftPropertyKey,
+    serializedDraft
+  );
+
+  properties.setProperty(
+    config.storage
+      .currentDraftProperty,
+    weekStart
+  );
+
+  weeklyOSSnapshotDraftRevisionIfNeeded_(
+    draft
+  );
+
+  weeklyOSLog_(
+    "Draft saved.",
+    {
+      weekStart:
+        weekStart,
+
+      revision:
+        draft.revision,
+
+      status:
+        draft.status
+    }
+  );
+
+  return draft;
+}
+
+
+/*************************************************
+ * GET DRAFT
+ *
+ * With no date:
+ * Returns the current active WeeklyOS draft.
+ *
+ * With a date:
+ * Returns the saved draft for that Monday.
+ *************************************************/
+
+function weeklyOSGetDraft(weekStart) {
+  const config =
+    weeklyOSGetConfig_();
+
+  const properties =
+    PropertiesService
+      .getDocumentProperties();
+
+  let weekKey = "";
+
+  if (weekStart) {
+    weekKey =
+      weeklyOSDateKey_(
+        weeklyOSFindMonday_(
+          weekStart
+        )
+      );
+  } else {
+    weekKey =
+      properties.getProperty(
+        config.storage
+          .currentDraftProperty
+      ) || "";
+  }
+
+  if (!weekKey) {
+    return null;
+  }
+
+  const rawDraft =
+    properties.getProperty(
+      weeklyOSDraftPropertyKey_(
+        weekKey
+      )
+    );
+
+  if (!rawDraft) {
+    return null;
+  }
+
+  const draft =
+    weeklyOSSafeJsonParse_(
+      rawDraft,
+      null
+    );
+
+  if (!draft) {
+    throw new Error(
+      "WeeklyOS found a saved draft, but its data could not be read."
+    );
+  }
+
+  weeklyOSUpgradeDraftModel_(
+    draft
+  );
+
+  return draft;
+}
+
+
+/*************************************************
+ * SET CURRENT DRAFT WEEK
+ *************************************************/
+
+function weeklyOSSetCurrentDraftWeek_(
+  weekStart
+) {
+  const config =
+    weeklyOSGetConfig_();
+
+  const weekKey =
+    weeklyOSDateKey_(
+      weeklyOSFindMonday_(
+        weekStart
+      )
+    );
+
+  if (!weekKey) {
+    throw new Error(
+      "WeeklyOS could not set the active draft week."
+    );
+  }
+
+  PropertiesService
+    .getDocumentProperties()
+    .setProperty(
+      config.storage
+        .currentDraftProperty,
+      weekKey
+    );
+
+  return weekKey;
+}
+
+
+/*************************************************
+ * CLEAR DRAFT
+ *************************************************/
+
+function weeklyOSClearDraft(weekStart) {
+  const config =
+    weeklyOSGetConfig_();
+
+  const properties =
+    PropertiesService
+      .getDocumentProperties();
+
+  const currentWeek =
+    properties.getProperty(
+      config.storage
+        .currentDraftProperty
+    );
+
+  const weekKey =
+    weekStart
+      ? weeklyOSDateKey_(
+          weeklyOSFindMonday_(
+            weekStart
+          )
+        )
+      : currentWeek;
+
+  if (!weekKey) {
+    return {
+      cleared: false,
+      reason: "NO_DRAFT"
+    };
+  }
+
+  properties.deleteProperty(
+    weeklyOSDraftPropertyKey_(
+      weekKey
+    )
+  );
+
+  properties.deleteProperty(
+    weeklyOSRevisionSnapshotKey_(
+      weekKey
+    )
+  );
+
+  if (
+    currentWeek ===
+    weekKey
+  ) {
+    properties.deleteProperty(
+      config.storage
+        .currentDraftProperty
+    );
+  }
+
+  weeklyOSLog_(
+    "Draft cleared.",
+    {
+      weekStart:
+        weekKey
+    }
+  );
+
+  return {
+    cleared: true,
+    weekStart: weekKey
+  };
+}
+
+
+/*************************************************
+ * BUILD DRAFT PROPERTY KEY
+ *************************************************/
+
+function weeklyOSDraftPropertyKey_(
+  weekStart
+) {
+  const config =
+    weeklyOSGetConfig_();
+
+  return (
+    config.storage
+      .draftPropertyPrefix +
+    weeklyOSDateKey_(
+      weekStart
+    )
+  );
+}
+
+
+/*************************************************
+ * REVISION SNAPSHOT KEY
+ *
+ * Used to prevent autosave from adding dozens
+ * of identical rows to the history sheet.
+ *************************************************/
+
+function weeklyOSRevisionSnapshotKey_(
+  weekStart
+) {
+  const config =
+    weeklyOSGetConfig_();
+
+  return (
+    config.storage
+      .draftPropertyPrefix +
+    "SNAPSHOT_" +
+    weeklyOSDateKey_(
+      weekStart
+    )
+  );
+}
+
+
+/*************************************************
+ * SNAPSHOT REVISION IF NEEDED
+ *
+ * One history row is created per revision.
+ *
+ * Repeated autosaves during the same revision
+ * update the working draft but do not create
+ * additional history rows.
+ *************************************************/
+
+function weeklyOSSnapshotDraftRevisionIfNeeded_(
+  draft
+) {
+  const properties =
+    PropertiesService
+      .getDocumentProperties();
+
+  const snapshotKey =
+    weeklyOSRevisionSnapshotKey_(
+      draft.weekStart
+    );
+
+  const revision =
+    String(
+      draft.revision || 1
+    );
+
+  const lastSnapshotRevision =
+    properties.getProperty(
+      snapshotKey
+    );
+
+  if (
+    lastSnapshotRevision ===
+    revision
+  ) {
+    return false;
+  }
+
+  weeklyOSAppendDraftRevision_(
+    draft
+  );
+
+  properties.setProperty(
+    snapshotKey,
+    revision
+  );
+
+  return true;
+}
+
+
+/*************************************************
+ * APPEND REVISION TO HISTORY SHEET
+ *************************************************/
+
+function weeklyOSAppendDraftRevision_(
+  draft
+) {
+  const sheet =
+    weeklyOSGetOrCreateDraftHistorySheet_();
+
+  const generatedSheetName =
+    draft.metadata &&
+    draft.metadata.generatedSheetName
+      ? draft.metadata
+          .generatedSheetName
+      : "";
+
+  const generatedAt =
+    draft.metadata &&
+    draft.metadata.generatedAt
+      ? draft.metadata
+          .generatedAt
+      : "";
+
+  sheet.appendRow([
+    draft.id,
+    draft.weekStart,
+    draft.weekEnd || "",
+    Number(
+      draft.revision || 1
+    ),
+    draft.status || "IN_PROGRESS",
+    new Date(),
+    Session
+      .getActiveUser()
+      .getEmail() || "",
+    generatedSheetName,
+    generatedAt,
+    JSON.stringify(draft)
+  ]);
+}
+
+
+/*************************************************
+ * GET OR CREATE HISTORY SHEET
+ *************************************************/
+
+function weeklyOSGetOrCreateDraftHistorySheet_() {
+  const config =
+    weeklyOSGetConfig_();
+
+  const spreadsheet =
+    weeklyOSGetSpreadsheet_();
+
+  let sheet =
+    spreadsheet.getSheetByName(
+      config.sheets
+        .draftHistory
+    );
+
+  if (!sheet) {
+    sheet =
+      spreadsheet.insertSheet(
+        config.sheets
+          .draftHistory
+      );
+
+    sheet
+      .getRange(
+        1,
+        1,
+        1,
+        10
+      )
+      .setValues([[
+        "Draft ID",
+        "Week Start",
+        "Week End",
+        "Revision",
+        "Status",
+        "Saved At",
+        "Saved By",
+        "Generated Sheet",
+        "Generated At",
+        "Draft JSON"
+      ]]);
+
+    sheet.setFrozenRows(1);
+
+    sheet
+      .getRange(
+        1,
+        1,
+        1,
+        10
+      )
+      .setFontWeight(
+        "bold"
+      );
+
+    sheet.hideSheet();
+  }
+
+  return sheet;
+}
+
+
+/*************************************************
+ * GET DRAFT HISTORY
+ *************************************************/
+
+function weeklyOSGetDraftHistory_(
+  weekStart
+) {
+  const config =
+    weeklyOSGetConfig_();
+
+  const sheet =
+    weeklyOSGetSheetSafe_(
+      config.sheets
+        .draftHistory
+    );
+
+  if (
+    !sheet ||
+    sheet.getLastRow() < 2
+  ) {
+    return [];
+  }
+
+  const weekKey =
+    weeklyOSDateKey_(
+      weeklyOSFindMonday_(
+        weekStart
+      )
+    );
+
+  const values =
+    sheet
+      .getRange(
+        2,
+        1,
+        sheet.getLastRow() - 1,
+        10
+      )
+      .getValues();
+
+  return values
+    .filter(
+      function (row) {
+        return (
+          weeklyOSDateKey_(
+            row[1]
+          ) ===
+          weekKey
+        );
+      }
+    )
+    .map(
+      function (row) {
+        return {
+          draftId:
+            row[0],
+
+          weekStart:
+            weeklyOSDateKey_(
+              row[1]
+            ),
+
+          weekEnd:
+            weeklyOSDateKey_(
+              row[2]
+            ),
+
+          revision:
+            Number(
+              row[3] || 1
+            ),
+
+          status:
+            row[4] || "",
+
+          savedAt:
+            row[5],
+
+          savedBy:
+            row[6] || "",
+
+          generatedSheet:
+            row[7] || "",
+
+          generatedAt:
+            row[8] || ""
+        };
+      }
+    )
+    .sort(
+      function (first, second) {
+        return (
+          second.revision -
+          first.revision
+        );
+      }
+    );
+}
+
+
+/*************************************************
+ * READ ONE HISTORY REVISION
+ *************************************************/
+
+function weeklyOSGetDraftRevision_(
+  weekStart,
+  revision
+) {
+  const config =
+    weeklyOSGetConfig_();
+
+  const sheet =
+    weeklyOSGetSheetSafe_(
+      config.sheets
+        .draftHistory
+    );
+
+  if (
+    !sheet ||
+    sheet.getLastRow() < 2
+  ) {
+    return null;
+  }
+
+  const weekKey =
+    weeklyOSDateKey_(
+      weeklyOSFindMonday_(
+        weekStart
+      )
+    );
+
+  const targetRevision =
+    Number(revision);
+
+  const values =
+    sheet
+      .getRange(
+        2,
+        1,
+        sheet.getLastRow() - 1,
+        10
+      )
+      .getValues();
+
+  for (
+    let index =
+      values.length - 1;
+    index >= 0;
+    index--
+  ) {
+    const row =
+      values[index];
+
+    const rowWeek =
+      weeklyOSDateKey_(
+        row[1]
+      );
+
+    const rowRevision =
+      Number(
+        row[3]
+      );
+
+    if (
+      rowWeek === weekKey &&
+      rowRevision ===
+        targetRevision
+    ) {
+      const draft =
+        weeklyOSSafeJsonParse_(
+          row[9],
+          null
+        );
+
+      if (draft) {
+        weeklyOSUpgradeDraftModel_(
+          draft
+        );
+      }
+
+      return draft;
+    }
+  }
+
+  return null;
+}
+
+
+/*************************************************
+ * RESTORE HISTORY REVISION
+ *
+ * Restoring creates a new revision instead of
+ * overwriting history.
+ *************************************************/
+
+function weeklyOSRestoreDraftRevision_(
+  weekStart,
+  revision
+) {
+  const restoredDraft =
+    weeklyOSGetDraftRevision_(
+      weekStart,
+      revision
+    );
+
+  if (!restoredDraft) {
+    throw new Error(
+      "WeeklyOS could not find that saved draft revision."
+    );
+  }
+
+  const currentDraft =
+    weeklyOSGetDraft(
+      weekStart
+    );
+
+  restoredDraft.id =
+    currentDraft &&
+    currentDraft.id
+      ? currentDraft.id
+      : restoredDraft.id;
+
+  restoredDraft.revision =
+    currentDraft
+      ? Number(
+          currentDraft.revision || 1
+        ) + 1
+      : Number(
+          restoredDraft.revision || 1
+        ) + 1;
+
+  restoredDraft.status =
+    "IN_PROGRESS";
+
+  restoredDraft.updatedAt =
+    weeklyOSNowIso_();
+
+  restoredDraft.metadata =
+    restoredDraft.metadata || {};
+
+  restoredDraft.metadata
+    .restoredFromRevision =
+      Number(revision);
+
+  weeklyOSSaveDraft(
+    restoredDraft
+  );
+
+  return restoredDraft;
+}
+
+
+/*************************************************
+ * LIST SAVED WEEKLYOS DRAFTS
+ *************************************************/
+
+function weeklyOSListSavedDrafts_() {
+  const config =
+    weeklyOSGetConfig_();
+
+  const properties =
+    PropertiesService
+      .getDocumentProperties()
+      .getProperties();
+
+  const prefix =
+    config.storage
+      .draftPropertyPrefix;
+
+  const excludedSnapshotPrefix =
+    prefix + "SNAPSHOT_";
+
+  return Object.keys(
+    properties
+  )
+    .filter(
+      function (key) {
+        return (
+          key.indexOf(prefix) === 0 &&
+          key.indexOf(
+            excludedSnapshotPrefix
+          ) !== 0
+        );
+      }
+    )
+    .map(
+      function (key) {
+        const draft =
+          weeklyOSSafeJsonParse_(
+            properties[key],
+            null
+          );
+
+        if (!draft) {
+          return null;
+        }
+
+        return {
+          id:
+            draft.id,
+
+          weekStart:
+            draft.weekStart,
+
+          weekEnd:
+            draft.weekEnd,
+
+          revision:
+            draft.revision || 1,
+
+          status:
+            draft.status,
+
+          updatedAt:
+            draft.updatedAt,
+
+          generatedSheetName:
+            draft.metadata &&
+            draft.metadata
+              .generatedSheetName
+              ? draft.metadata
+                  .generatedSheetName
+              : ""
+        };
+      }
+    )
+    .filter(Boolean)
+    .sort(
+      function (first, second) {
+        return String(
+          second.weekStart
+        ).localeCompare(
+          String(
+            first.weekStart
+          )
+        );
+      }
+    );
+}
+
+
+/*************************************************
+ * UPGRADE OLD SAVED DRAFTS
+ *
+ * Makes previously saved schema versions safe
+ * to open after the WeekModel expands.
+ *************************************************/
+
+function weeklyOSUpgradeDraftModel_(
+  draft
+) {
+  if (!draft) {
+    return null;
+  }
+
+  draft.schemaVersion =
+    Number(
+      draft.schemaVersion || 1
+    );
+
+  draft.days =
+    Array.isArray(
+      draft.days
+    )
+      ? draft.days
+      : [];
+
+  draft.days.forEach(
+    function (day) {
+      weeklyOSEnsureDayModel_(
+        day
+      );
+    }
+  );
+
+  draft.observations =
+    Array.isArray(
+      draft.observations
+    )
+      ? draft.observations
+      : [];
+
+  draft.validation =
+    draft.validation || {
+      isValid: false,
+      errors: [],
+      warnings: []
+    };
+
+  draft.metadata =
+    draft.metadata || {
+      generatedSheetId: null,
+      generatedSheetName: null,
+      generatedAt: null,
+      lastSourceRefreshAt: null
+    };
+
+  if (
+    draft.schemaVersion < 2
+  ) {
+    draft.schemaVersion = 2;
+  }
+
+  return draft;
+}
