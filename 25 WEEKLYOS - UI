@@ -1,0 +1,2043 @@
+/*************************************************
+ * 25 WEEKLYOS - UI
+ * Version: 0.3.2
+ * Status: ACTIVE DEVELOPMENT
+ *
+ * Server-side controller for the WeeklyOS popup.
+ *
+ * IMPORTANT:
+ * Functions called by google.script.run must NOT
+ * end with an underscore. Apps Script considers
+ * underscore-ending functions private.
+ *************************************************/
+
+
+/*************************************************
+ * OPEN WEEKLYOS BUILDER
+ *
+ * Always refreshes the saved draft from current
+ * source sheets before opening.
+ *
+ * weeklyOSRefreshDraft() preserves:
+ * - manual rehearsals
+ * - manual meetings
+ * - manual work calls
+ * - manual put-ins
+ * - manual notes
+ * - coverage choices
+ * - review status
+ *************************************************/
+
+function weeklyOSOpenBuilder() {
+  let draft =
+    weeklyOSGetDraft();
+
+  if (!draft) {
+    /*
+     * No saved draft exists, so build the next week
+     * from all current source sheets.
+     */
+    draft =
+      weeklyOSBuildDraft(
+        weeklyOSNextMonday_()
+      );
+  } else {
+    /*
+     * A saved draft exists.
+     *
+     * Refresh it before opening so new information
+     * from Expanded Calendar—including conductors—
+     * appears without requiring the user to clear
+     * and rebuild the draft.
+     */
+    draft =
+      weeklyOSRefreshDraft();
+  }
+
+  weeklyOSBackfillCrewCoverageFromSheet_(
+    draft
+  );
+
+  weeklyOSRecalculateDraft_(
+    draft
+  );
+
+  weeklyOSSaveDraft(
+    draft
+  );
+
+  return weeklyOSShowBuilderDialog_(
+    draft
+  );
+}
+
+/*************************************************
+ * OPEN BUILDER FOR A SPECIFIC WEEK
+ *
+ * Useful later for:
+ *
+ * - Build another week
+ * - Resume an older draft
+ * - Open a week from HomeOS
+ *************************************************/
+
+/*************************************************
+ * OPEN BUILDER FOR A SPECIFIC WEEK
+ *
+ * Existing drafts are refreshed from current sources
+ * before opening, while preserving manual edits.
+ *************************************************/
+
+function weeklyOSOpenBuilderForWeek(
+  weekStart
+) {
+  const monday =
+    weeklyOSFindMonday_(
+      weekStart
+    );
+
+  let draft =
+    weeklyOSGetDraft(
+      monday
+    );
+
+  if (!draft) {
+    /*
+     * No saved draft exists for this week.
+     */
+    draft =
+      weeklyOSBuildDraft(
+        monday
+      );
+
+  } else {
+    /*
+     * Make this the active draft first so
+     * weeklyOSRefreshDraft() refreshes the correct week.
+     *
+     * Manual rehearsals, meetings, work calls, put-ins,
+     * notes, coverage choices, and review status survive
+     * the refresh through the existing merge process.
+     */
+    weeklyOSSetCurrentDraftWeek_(
+      monday
+    );
+
+    draft =
+      weeklyOSRefreshDraft();
+  }
+
+  weeklyOSBackfillCrewCoverageFromSheet_(
+    draft
+  );
+
+  weeklyOSRecalculateDraft_(
+    draft
+  );
+
+  weeklyOSSaveDraft(
+    draft
+  );
+
+  return weeklyOSShowBuilderDialog_(
+    draft
+  );
+}
+
+/*************************************************
+ * SHOW BUILDER DIALOG
+ *************************************************/
+
+function weeklyOSShowBuilderDialog_(
+  draft
+) {
+  if (!draft) {
+    throw new Error(
+      "WeeklyOS could not open because no draft was available."
+    );
+  }
+
+  weeklyOSUpgradeDraftModel_(
+    draft
+  );
+
+  weeklyOSBackfillCrewCoverageFromSheet_(
+    draft
+  );
+
+  weeklyOSRecalculateDraft_(
+    draft
+  );
+
+  const showTitle =
+    weeklyOSGetShowTitle_();
+
+  const template =
+    HtmlService.createTemplateFromFile(
+      "WeeklyOS Builder"
+    );
+
+  template.initialDraftJson =
+    weeklyOSSafeJsonForHtml_(
+      draft
+    );
+
+  template.initialBootstrapJson =
+    weeklyOSSafeJsonForHtml_(
+      weeklyOSBuildUiBootstrap_(
+        draft
+      )
+    );
+
+  const html =
+    template
+      .evaluate()
+      .setWidth(1180)
+      .setHeight(760);
+
+  SpreadsheetApp
+    .getUi()
+    .showModalDialog(
+      html,
+      showTitle +
+        " — Weekly Schedule Builder"
+    );
+
+  return true;
+}
+
+
+/*************************************************
+ * BUILD UI BOOTSTRAP
+ *
+ * Additional information the popup may use
+ * without making another server call.
+ *************************************************/
+
+function weeklyOSBuildUiBootstrap_(
+  draft
+) {
+  const config =
+    weeklyOSGetConfig_();
+
+  return {
+    version:
+      config.version,
+
+    showTitle:
+      weeklyOSGetShowTitle_(),
+
+    toolTitle:
+      "Weekly Schedule Builder",
+
+    weekStart:
+      draft.weekStart,
+
+    weekEnd:
+      draft.weekEnd,
+
+    revision:
+      draft.revision || 1,
+
+    status:
+      draft.status ||
+      "IN_PROGRESS",
+
+    generatedSheetName:
+      draft.metadata &&
+      draft.metadata.generatedSheetName
+        ? draft.metadata
+            .generatedSheetName
+        : "",
+
+    savedDrafts:
+      weeklyOSListSavedDrafts_(),
+
+    draftHistory:
+      weeklyOSGetDraftHistory_(
+        draft.weekStart
+      ),
+
+    rehearsalDefaults:
+      config.rehearsalDefaults,
+
+    companyEventTypes:
+      weeklyOSGetUiCompanyEventTypes_(),
+
+    rehearsalTypes:
+      weeklyOSGetUiRehearsalTypes_(),
+
+    assignment:
+      weeklyOSGetUiAssignmentBootstrap_(),
+
+    peopleOptions:
+      weeklyOSGetUiPeopleOptions_(),
+
+    swingOptions:
+      weeklyOSGetUiSwingOptions_(),
+
+    castCoverageByRole:
+      weeklyOSGetUiCastCoverageByRole_(),
+
+    newActorOptions:
+      weeklyOSGetUiNewActorOptions_(draft),
+
+    outScopes:
+      weeklyOSGetUiOutScopes_()
+  };
+}
+
+
+/*************************************************
+ * GET SHOW TITLE
+ *
+ * User-facing WeeklyOS branding comes from the
+ * production settings already used by StageOS.
+ *
+ * Resolution order:
+ * 1. getShowOSSettings()
+ * 2. getStageOSSettings()
+ * 3. Production Settings label/value pairs
+ * 4. Spreadsheet name
+ *************************************************/
+
+function weeklyOSGetShowTitle_() {
+  const settingsFunctions = [
+    "getShowOSSettings",
+    "getStageOSSettings"
+  ];
+
+  for (
+    let index = 0;
+    index < settingsFunctions.length;
+    index++
+  ) {
+    const functionName =
+      settingsFunctions[index];
+
+    if (
+      typeof this[functionName] !==
+      "function"
+    ) {
+      continue;
+    }
+
+    try {
+      const settings =
+        this[functionName]();
+
+      const fromSettings =
+        weeklyOSExtractShowTitleFromSettings_(
+          settings
+        );
+
+      if (fromSettings) {
+        return fromSettings;
+      }
+    } catch (error) {
+      weeklyOSLog_(
+        "Could not read show title from " +
+          functionName +
+          ".",
+        {
+          message:
+            error.message
+        }
+      );
+    }
+  }
+
+  const fromSheet =
+    weeklyOSReadShowTitleFromProductionSettings_();
+
+  if (fromSheet) {
+    return fromSheet;
+  }
+
+  const spreadsheetName =
+    weeklyOSNormalizeText_(
+      weeklyOSGetSpreadsheet_()
+        .getName()
+    );
+
+  if (spreadsheetName) {
+    return spreadsheetName
+      .replace(
+        /\s*[–—-]\s*(STAGEOS|SMOS).*$/i,
+        ""
+      )
+      .trim() ||
+      spreadsheetName;
+  }
+
+  return "StageOS";
+}
+
+
+function weeklyOSExtractShowTitleFromSettings_(
+  settings
+) {
+  if (!settings) {
+    return "";
+  }
+
+  const keys = [
+    "showTitle",
+    "showName",
+    "productionTitle",
+    "productionName",
+    "title",
+    "show"
+  ];
+
+  for (
+    let index = 0;
+    index < keys.length;
+    index++
+  ) {
+    const value =
+      weeklyOSNormalizeText_(
+        settings[keys[index]]
+      );
+
+    if (value) {
+      return value;
+    }
+  }
+
+  if (
+    settings.production &&
+    typeof settings.production ===
+      "object"
+  ) {
+    return weeklyOSExtractShowTitleFromSettings_(
+      settings.production
+    );
+  }
+
+  return "";
+}
+
+
+function weeklyOSReadShowTitleFromProductionSettings_() {
+  const sheet =
+    weeklyOSGetSheetSafe_(
+      "Production Settings"
+    );
+
+  if (!sheet) {
+    return "";
+  }
+
+  const values =
+    sheet
+      .getDataRange()
+      .getDisplayValues();
+
+  const acceptedLabels = {
+    "SHOW TITLE": true,
+    "SHOW NAME": true,
+    "PRODUCTION TITLE": true,
+    "PRODUCTION NAME": true
+  };
+
+  for (
+    let rowIndex = 0;
+    rowIndex < values.length;
+    rowIndex++
+  ) {
+    const row =
+      values[rowIndex];
+
+    for (
+      let columnIndex = 0;
+      columnIndex < row.length - 1;
+      columnIndex++
+    ) {
+      const label =
+        weeklyOSUpper_(
+          row[columnIndex]
+        );
+
+      if (!acceptedLabels[label]) {
+        continue;
+      }
+
+      const value =
+        weeklyOSNormalizeText_(
+          row[columnIndex + 1]
+        );
+
+      if (value) {
+        return value;
+      }
+    }
+  }
+
+  return "";
+}
+
+
+/*************************************************
+ * GET CURRENT DRAFT
+ *
+ * Public endpoint for google.script.run.
+ *************************************************/
+
+function weeklyOSUiGetDraft() {
+  const draft =
+    weeklyOSGetDraft();
+
+  if (!draft) {
+    return null;
+  }
+
+  weeklyOSUpgradeDraftModel_(
+    draft
+  );
+
+  weeklyOSRecalculateDraft_(
+    draft
+  );
+
+  return draft;
+}
+
+
+/*************************************************
+ * GET UI BOOTSTRAP
+ *
+ * Public endpoint for google.script.run.
+ *************************************************/
+
+function weeklyOSUiGetBootstrap() {
+  const draft =
+    weeklyOSGetDraft();
+
+  if (!draft) {
+    return {
+      version:
+        weeklyOSGetConfig_()
+          .version,
+
+      savedDrafts:
+        weeklyOSListSavedDrafts_(),
+
+      draftHistory: []
+    };
+  }
+
+  return weeklyOSBuildUiBootstrap_(
+    draft
+  );
+}
+
+
+/*************************************************
+ * BUILD DRAFT FOR SELECTED WEEK
+ *
+ * Public endpoint for google.script.run.
+ *************************************************/
+
+function weeklyOSUiBuildDraft(
+  weekStart
+) {
+  const monday =
+    weeklyOSFindMonday_(
+      weekStart
+    );
+
+  const existing =
+    weeklyOSGetDraft(
+      monday
+    );
+
+  if (existing) {
+    weeklyOSSetCurrentDraftWeek_(
+      monday
+    );
+
+    weeklyOSUpgradeDraftModel_(
+      existing
+    );
+
+    weeklyOSRecalculateDraft_(
+      existing
+    );
+
+    return {
+      draft:
+        existing,
+
+      bootstrap:
+        weeklyOSBuildUiBootstrap_(
+          existing
+        ),
+
+      resumed:
+        true
+    };
+  }
+
+  const draft =
+    weeklyOSBuildDraft(
+      monday
+    );
+
+  return {
+    draft:
+      draft,
+
+    bootstrap:
+      weeklyOSBuildUiBootstrap_(
+        draft
+      ),
+
+    resumed:
+      false
+  };
+}
+
+
+/*************************************************
+ * LOAD SAVED DRAFT FOR WEEK
+ *
+ * Public endpoint for google.script.run.
+ *************************************************/
+
+function weeklyOSUiLoadDraft(
+  weekStart
+) {
+  const draft =
+    weeklyOSGetDraft(
+      weekStart
+    );
+
+  if (!draft) {
+    throw new Error(
+      "WeeklyOS could not find a saved draft for that week."
+    );
+  }
+
+  weeklyOSSetCurrentDraftWeek_(
+    draft.weekStart
+  );
+
+  weeklyOSUpgradeDraftModel_(
+    draft
+  );
+
+  weeklyOSRecalculateDraft_(
+    draft
+  );
+
+  return {
+    draft:
+      draft,
+
+    bootstrap:
+      weeklyOSBuildUiBootstrap_(
+        draft
+      )
+  };
+}
+
+
+/*************************************************
+ * REFRESH DRAFT FROM SOURCES
+ *
+ * Manual entries and coverage selections are
+ * preserved by weeklyOSRefreshDraft().
+ *
+ * Public endpoint for google.script.run.
+ *************************************************/
+
+function weeklyOSUiRefreshDraft() {
+  const draft =
+    weeklyOSRefreshDraft();
+
+  weeklyOSBackfillCrewCoverageFromSheet_(
+    draft
+  );
+
+  weeklyOSRecalculateDraft_(
+    draft
+  );
+
+  weeklyOSSaveDraft(
+    draft
+  );
+
+  return {
+    draft:
+      draft,
+
+    bootstrap:
+      weeklyOSBuildUiBootstrap_(
+        draft
+      ),
+
+    message:
+      "WeeklyOS refreshed the draft from its source sheets."
+  };
+}
+
+
+/*************************************************
+ * SAVE DRAFT
+ *
+ * Used by popup autosave.
+ *
+ * Autosave does not increment the revision.
+ * A source refresh, restore, or generation step
+ * controls revision changes separately.
+ *
+ * Public endpoint for google.script.run.
+ *************************************************/
+
+function weeklyOSUiSaveDraft(
+  incomingDraft
+) {
+  const draft =
+    weeklyOSPrepareIncomingDraft_(
+      incomingDraft
+    );
+
+  draft.status =
+    draft.status === "GENERATED"
+      ? "GENERATED"
+      : "IN_PROGRESS";
+
+  weeklyOSRecalculateDraft_(
+    draft
+  );
+
+  weeklyOSSaveDraft(
+    draft
+  );
+
+  return {
+    draft:
+      draft,
+
+    validation:
+      draft.validation,
+
+    savedAt:
+      draft.updatedAt,
+
+    message:
+      "Draft saved."
+  };
+}
+
+
+/*************************************************
+ * VALIDATE UNSAVED UI DRAFT
+ *
+ * Lets the popup refresh its warnings without
+ * first requiring a save.
+ *
+ * Public endpoint for google.script.run.
+ *************************************************/
+
+function weeklyOSUiValidateDraft(
+  incomingDraft
+) {
+  const draft =
+    weeklyOSPrepareIncomingDraft_(
+      incomingDraft
+    );
+
+  weeklyOSRecalculateDraft_(
+    draft
+  );
+
+  return {
+    validation:
+      draft.validation,
+
+    days:
+      draft.days.map(
+        function (day) {
+          return {
+            date:
+              day.date,
+
+            status:
+              day.status,
+
+            statusLabels:
+              day.statusLabels,
+
+            confidence:
+              day.confidence,
+
+            observations:
+              day.observations
+          };
+        }
+      ),
+
+    observations:
+      draft.observations
+  };
+}
+
+
+/*************************************************
+ * GENERATE WEEKLY SCHEDULE
+ *
+ * Saves the popup draft immediately before
+ * generation so the sheet always reflects the
+ * latest reviewed data.
+ *
+ * Public endpoint for google.script.run.
+ *************************************************/
+
+function weeklyOSUiGenerate(
+  incomingDraft
+) {
+  const draft =
+    weeklyOSPrepareIncomingDraft_(
+      incomingDraft
+    );
+
+  weeklyOSRecalculateDraft_(
+    draft
+  );
+
+  weeklyOSSaveDraft(
+    draft
+  );
+
+  const result =
+    weeklyOSGenerateFromDraft_(
+      draft
+    );
+
+  const savedDraft =
+    weeklyOSGetDraft(
+      draft.weekStart
+    ) || draft;
+
+  return {
+    ok:
+      true,
+
+    message:
+      result &&
+      result.message
+        ? result.message
+        : "Weekly Schedule generated.",
+
+    sheetName:
+      result &&
+      result.sheetName
+        ? result.sheetName
+        : (
+          savedDraft.metadata &&
+          savedDraft.metadata
+            .generatedSheetName
+            ? savedDraft.metadata
+                .generatedSheetName
+            : ""
+        ),
+
+    sheetId:
+      result &&
+      result.sheetId
+        ? result.sheetId
+        : (
+          savedDraft.metadata &&
+          savedDraft.metadata
+            .generatedSheetId
+            ? savedDraft.metadata
+                .generatedSheetId
+            : null
+        ),
+
+    draft:
+      savedDraft
+  };
+}
+
+
+/*************************************************
+ * CLEAR CURRENT DRAFT
+ *
+ * Public endpoint for google.script.run.
+ *************************************************/
+
+function weeklyOSUiClearDraft(
+  weekStart
+) {
+  const result =
+    weeklyOSClearDraft(
+      weekStart
+    );
+
+  return {
+    cleared:
+      Boolean(
+        result &&
+        result.cleared
+      ),
+
+    weekStart:
+      result &&
+      result.weekStart
+        ? result.weekStart
+        : "",
+
+    savedDrafts:
+      weeklyOSListSavedDrafts_(),
+
+    message:
+      result &&
+      result.cleared
+        ? "WeeklyOS cleared the saved draft."
+        : "No saved draft was found."
+  };
+}
+
+/*************************************************
+ * UI CAST COVERAGE BY ROLE
+ *
+ * Canonical source: Cast List
+ *
+ * Cast List:
+ * B = Full Name
+ * D = Full Character
+ * E = Role
+ * F = Covers
+ *
+ * Returns the same eligible actors under both the
+ * short role and full-character keys.
+ *
+ * Temporary company-change rule:
+ * Fernell Hogan covers Leaf / Leaf Coneybear.
+ *************************************************/
+
+function weeklyOSGetUiCastCoverageByRole_() {
+  const result = {};
+
+  const sheet =
+    weeklyOSGetSheetSafe_(
+      "Cast List"
+    );
+
+  if (!sheet) {
+    return result;
+  }
+
+  const lastRow =
+    sheet.getLastRow();
+
+  if (lastRow < 3) {
+    return result;
+  }
+
+  /*
+   * Read A:F.
+   */
+  const values =
+    sheet
+      .getRange(
+        3,
+        1,
+        lastRow - 2,
+        6
+      )
+      .getDisplayValues();
+
+  /*
+   * Connect every short role to its full-character
+   * name and vice versa.
+   *
+   * Example:
+   * Leaf ↔ Leaf Coneybear
+   * Barfée ↔ William Barfée
+   */
+  const aliasesByRole = {};
+
+  values.forEach(function (row) {
+    const castType =
+      weeklyOSNormalizeText_(
+        row[0]
+      );
+
+    const fullCharacter =
+      weeklyOSNormalizeText_(
+        row[3]
+      );
+
+    const shortRole =
+      weeklyOSNormalizeText_(
+        row[4] || row[0]
+      );
+
+    if (
+      !shortRole ||
+      weeklyOSUpper_(castType)
+        .indexOf("SWING") >= 0
+    ) {
+      return;
+    }
+
+    const aliases =
+      weeklyOSUniqueStrings_([
+        castType,
+        shortRole,
+        fullCharacter
+      ]);
+
+    aliases.forEach(function (alias) {
+      const key =
+        weeklyOSCoverageRoleKey_(
+          alias
+        );
+
+      if (!key) {
+        return;
+      }
+
+      aliasesByRole[key] =
+        weeklyOSUniqueStrings_(
+          aliases
+        );
+    });
+  });
+
+  /*
+   * Read every performer with entries in COVERS.
+   */
+  values.forEach(function (row) {
+    const fullName =
+      weeklyOSNormalizeText_(
+        row[1]
+      );
+
+    const coversText =
+      weeklyOSNormalizeText_(
+        row[5]
+      );
+
+    if (
+      !fullName ||
+      !coversText
+    ) {
+      return;
+    }
+
+    const covers =
+      String(row[5] || "")
+        .split(/\n|,|;/)
+        .map(weeklyOSNormalizeText_)
+        .filter(Boolean);
+
+    covers.forEach(function (coveredRole) {
+      const coveredKey =
+        weeklyOSCoverageRoleKey_(
+          coveredRole
+        );
+
+      if (!coveredKey) {
+        return;
+      }
+
+      const aliases =
+        aliasesByRole[coveredKey] ||
+        [coveredRole];
+
+      aliases.forEach(function (alias) {
+        weeklyOSAddEligibleCastCover_(
+          result,
+          alias,
+          fullName
+        );
+      });
+
+      /*
+       * Also save directly under the exact text found
+       * in the COVERS cell.
+       */
+      weeklyOSAddEligibleCastCover_(
+        result,
+        coveredRole,
+        fullName
+      );
+    });
+  });
+
+  /*
+   * TEMPORARY RULE:
+   *
+   * Fernell Hogan is Justin Cooley's temporary
+   * replacement and therefore must appear as an
+   * eligible Leaf cover until Company Wizard is
+   * completed.
+   */
+  [
+    "Leaf",
+    "Leaf Coneybear"
+  ].forEach(function (role) {
+    weeklyOSAddEligibleCastCover_(
+      result,
+      role,
+      "Fernell Hogan"
+    );
+  });
+
+  /*
+   * Deduplicate and alphabetize each dropdown.
+   */
+  Object.keys(result).forEach(function (key) {
+    result[key] =
+      weeklyOSUniqueStrings_(
+        result[key]
+      ).sort(function (first, second) {
+        return first.localeCompare(second);
+      });
+  });
+
+  return result;
+}
+
+
+function weeklyOSAddEligibleCastCover_(
+  result,
+  role,
+  actorName
+) {
+  const roleKey =
+    weeklyOSCoverageRoleKey_(
+      role
+    );
+
+  const cleanActor =
+    weeklyOSNormalizeText_(
+      actorName
+    );
+
+  if (
+    !roleKey ||
+    !cleanActor
+  ) {
+    return;
+  }
+
+  if (!result[roleKey]) {
+    result[roleKey] = [];
+  }
+
+  result[roleKey].push(
+    cleanActor
+  );
+}
+
+
+function weeklyOSCoverageRoleKey_(
+  value
+) {
+  return weeklyOSNormalizeText_(
+    value
+  )
+    .toLowerCase()
+    .replace(/[éèêë]/g, "e")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+
+/*************************************************
+ * LIST SAVED DRAFTS
+ *
+ * Public endpoint for google.script.run.
+ *************************************************/
+
+function weeklyOSUiListSavedDrafts() {
+  return weeklyOSListSavedDrafts_();
+}
+
+
+/*************************************************
+ * GET DRAFT HISTORY
+ *
+ * Public endpoint for google.script.run.
+ *************************************************/
+
+function weeklyOSUiGetDraftHistory(
+  weekStart
+) {
+  return weeklyOSGetDraftHistory_(
+    weekStart
+  );
+}
+
+
+/*************************************************
+ * RESTORE DRAFT REVISION
+ *
+ * Public endpoint for google.script.run.
+ *************************************************/
+
+function weeklyOSUiRestoreDraftRevision(
+  weekStart,
+  revision
+) {
+  const draft =
+    weeklyOSRestoreDraftRevision_(
+      weekStart,
+      revision
+    );
+
+  weeklyOSSetCurrentDraftWeek_(
+    draft.weekStart
+  );
+
+  weeklyOSRecalculateDraft_(
+    draft
+  );
+
+  return {
+    draft:
+      draft,
+
+    bootstrap:
+      weeklyOSBuildUiBootstrap_(
+        draft
+      ),
+
+    message:
+      "WeeklyOS restored revision " +
+      revision +
+      " as a new working revision."
+  };
+}
+
+
+/*************************************************
+ * MARK DAY REVIEWED
+ *
+ * Optional lightweight endpoint for future UI
+ * versions that save one day at a time.
+ *
+ * Public endpoint for google.script.run.
+ *************************************************/
+
+function weeklyOSUiSetDayReviewed(
+  dateValue,
+  reviewed
+) {
+  const draft =
+    weeklyOSGetDraft();
+
+  if (!draft) {
+    throw new Error(
+      "WeeklyOS could not find a current draft."
+    );
+  }
+
+  const day =
+    weeklyOSGetDay_(
+      draft,
+      dateValue
+    );
+
+  if (!day) {
+    throw new Error(
+      "WeeklyOS could not find that day in the current draft."
+    );
+  }
+
+  day.reviewed =
+    Boolean(reviewed);
+
+  weeklyOSRecalculateDraft_(
+    draft
+  );
+
+  weeklyOSSaveDraft(
+    draft
+  );
+
+  return {
+    day:
+      day,
+
+    validation:
+      draft.validation,
+
+    savedAt:
+      draft.updatedAt
+  };
+}
+
+
+/*************************************************
+ * PREPARE DRAFT RECEIVED FROM HTML
+ *
+ * Browser data is plain JSON. This function
+ * restores missing WeekModel fields and protects
+ * server-owned metadata.
+ *************************************************/
+
+function weeklyOSPrepareIncomingDraft_(
+  incomingDraft
+) {
+  if (!incomingDraft) {
+    throw new Error(
+      "WeeklyOS did not receive a draft from the popup."
+    );
+  }
+
+  const draft =
+    weeklyOSDeepClone_(
+      incomingDraft
+    );
+
+  if (!draft.id) {
+    throw new Error(
+      "WeeklyOS received a draft without an ID."
+    );
+  }
+
+  if (!draft.weekStart) {
+    throw new Error(
+      "WeeklyOS received a draft without a week-start date."
+    );
+  }
+
+  const savedDraft =
+    weeklyOSGetDraft(
+      draft.weekStart
+    );
+
+  weeklyOSUpgradeDraftModel_(
+    draft
+  );
+
+  draft.weekStart =
+    weeklyOSDateKey_(
+      weeklyOSFindMonday_(
+        draft.weekStart
+      )
+    );
+
+  draft.weekEnd =
+    weeklyOSDateKey_(
+      weeklyOSAddDays_(
+        draft.weekStart,
+        6
+      )
+    );
+
+  if (savedDraft) {
+    draft.createdAt =
+      savedDraft.createdAt ||
+      draft.createdAt;
+
+    draft.revision =
+      Number(
+        savedDraft.revision ||
+        draft.revision ||
+        1
+      );
+
+    draft.metadata =
+      Object.assign(
+        {},
+        savedDraft.metadata || {},
+        draft.metadata || {}
+      );
+  }
+
+  draft.createdAt =
+    draft.createdAt ||
+    weeklyOSNowIso_();
+
+  draft.updatedAt =
+    weeklyOSNowIso_();
+
+  return draft;
+}
+
+
+/*************************************************
+ * UI REHEARSAL TYPE OPTIONS
+ *************************************************/
+
+function weeklyOSGetUiRehearsalTypes_() {
+  return [
+    {
+      value:
+        "UNDERSTUDY",
+
+      label:
+        "Understudy Rehearsal"
+    },
+
+    {
+      value:
+        "NEW_HIRE",
+
+      label:
+        "New-Hire Rehearsal"
+    },
+
+    {
+      value:
+        "BRUSH_UP",
+
+      label:
+        "Brush-Up"
+    },
+
+    {
+      value:
+        "MUSIC_REVIEW",
+
+      label:
+        "Music Review"
+    },
+
+    {
+      value:
+        "DANCE_REVIEW",
+
+      label:
+        "Dance Review"
+    },
+
+    {
+      value:
+        "OTHER",
+
+      label:
+        "Other"
+    }
+  ];
+}
+
+/*************************************************
+ * VALIDATE SAVED DRAFT MENU ACTION
+ *************************************************/
+
+function weeklyOSValidateSavedDraftMenu_() {
+  const ui =
+    SpreadsheetApp.getUi();
+
+  const draft =
+    weeklyOSGetDraft();
+
+  if (!draft) {
+    ui.alert(
+      "WeeklyOS",
+      "No saved WeeklyOS draft was found.",
+      ui.ButtonSet.OK
+    );
+
+    return;
+  }
+
+  const result =
+    weeklyOSValidateDraft(
+      draft
+    );
+
+  const messages = [];
+
+  if (
+    Array.isArray(
+      result.errors
+    )
+  ) {
+    result.errors.forEach(
+      function (item) {
+        messages.push(
+          "• " +
+          item.message
+        );
+      }
+    );
+  }
+
+  if (
+    Array.isArray(
+      result.warnings
+    )
+  ) {
+    result.warnings.forEach(
+      function (item) {
+        messages.push(
+          "⚠ " +
+          item.message
+        );
+      }
+    );
+  }
+
+  const message =
+    result.isValid
+      ? (
+        messages.length
+          ? "Draft is valid, with warnings:\n\n" +
+            messages.join("\n")
+          : "Draft is ready to generate."
+      )
+      : (
+        messages.length
+          ? messages.join("\n")
+          : "The draft is not ready to generate."
+      );
+
+  ui.alert(
+    "WeeklyOS Validation",
+    message,
+    ui.ButtonSet.OK
+  );
+}
+
+/*************************************************
+ * CLEAR DRAFT MENU ACTION
+ *************************************************/
+
+function weeklyOSClearDraftMenu_() {
+  const ui =
+    SpreadsheetApp.getUi();
+
+  const response =
+    ui.alert(
+      "Clear WeeklyOS Draft?",
+      "This will remove the current saved draft. It will not delete a generated Weekly Schedule tab.",
+      ui.ButtonSet.YES_NO
+    );
+
+  if (
+    response !==
+    ui.Button.YES
+  ) {
+    return;
+  }
+
+  weeklyOSClearDraft();
+
+  ui.alert(
+    "WeeklyOS",
+    "The current WeeklyOS draft was cleared.",
+    ui.ButtonSet.OK
+  );
+}
+
+/*************************************************
+ * UI COMPANY EVENT OPTIONS
+ *************************************************/
+
+function weeklyOSGetUiCompanyEventTypes_() {
+  return [
+    {
+      value:
+        "NEW_HIRE_START",
+
+      label:
+        "New Hire Start"
+    },
+
+    {
+      value:
+        "FIRST_PERFORMANCE",
+
+      label:
+        "First Performance"
+    },
+
+    {
+      value:
+        "SCHEDULED_RETURN",
+
+      label:
+        "Scheduled Return"
+    },
+
+    {
+      value:
+        "FINAL_PERFORMANCE",
+
+      label:
+        "Final Performance"
+    },
+
+    {
+      value:
+        "WATCH_SHOW",
+
+      label:
+        "Watch Show"
+    },
+
+    {
+      value:
+        "ONBOARDING",
+
+      label:
+        "Onboarding / Measurements"
+    },
+
+    {
+      value:
+        "SPECIAL_EVENT",
+
+      label:
+        "Special Event"
+    },
+
+    {
+      value:
+        "COMPANY_MEETING",
+
+      label:
+        "Company Meeting"
+    },
+
+    {
+      value:
+        "OTHER",
+
+      label:
+        "Other Company Activity"
+    }
+  ];
+}
+
+
+/*************************************************
+ * UI OUT-SCOPE OPTIONS
+ *************************************************/
+
+function weeklyOSGetUiOutScopes_() {
+  return [
+    {
+      value:
+        "ALL",
+
+      label:
+        "All activity"
+    },
+
+    {
+      value:
+        "MAT",
+
+      label:
+        "Matinee only"
+    },
+
+    {
+      value:
+        "EVE",
+
+      label:
+        "Evening only"
+    },
+
+    {
+      value:
+        "MAT & EVE",
+
+      label:
+        "Matinee and Evening"
+    },
+
+    {
+      value:
+        "REHEARSAL & PERFORMANCE",
+
+      label:
+        "Rehearsal and Performance"
+    },
+
+    {
+      value:
+        "PUT-IN & PERFORMANCE",
+
+      label:
+        "Put-In and Performance"
+    }
+  ];
+}
+
+
+
+/*************************************************
+ * BACKFILL CREW COVERAGE FROM CREW OUTS
+ *
+ * Crew Outs stores the existing cover in column H.
+ * WeeklyOS crew-out objects already retain their
+ * source row, so this safely enriches the record
+ * without re-parsing the entire sheet layout.
+ *************************************************/
+
+function weeklyOSBackfillCrewCoverageFromSheet_(
+  draft
+) {
+  if (
+    !draft ||
+    !Array.isArray(
+      draft.days
+    )
+  ) {
+    return draft;
+  }
+
+  const config =
+    weeklyOSGetConfig_();
+
+  const sheet =
+    weeklyOSGetSheetSafe_(
+      config.sheets.crewOuts
+    );
+
+  if (!sheet) {
+    return draft;
+  }
+
+  const lastRow =
+    sheet.getLastRow();
+
+  if (lastRow < 1) {
+    return draft;
+  }
+
+  const coverageValues =
+    sheet
+      .getRange(
+        1,
+        8,
+        lastRow,
+        1
+      )
+      .getDisplayValues();
+
+  draft.days.forEach(
+    function (day) {
+      (
+        day.crewOuts || []
+      ).forEach(
+        function (outItem) {
+          if (outItem.coverage) {
+            return;
+          }
+
+          const sourceRows =
+            Array.isArray(
+              outItem.sourceRows
+            )
+              ? outItem.sourceRows
+              : [];
+
+          for (
+            let index = 0;
+            index <
+              sourceRows.length;
+            index++
+          ) {
+            const rowNumber =
+              Number(
+                sourceRows[index]
+              );
+
+            if (
+              !rowNumber ||
+              rowNumber < 1 ||
+              rowNumber >
+                coverageValues.length
+            ) {
+              continue;
+            }
+
+            const coverage =
+              weeklyOSNormalizeText_(
+                coverageValues[
+                  rowNumber - 1
+                ][0]
+              );
+
+            if (!coverage) {
+              continue;
+            }
+
+            outItem.coverage =
+              coverage;
+
+            outItem.requiresReview =
+              false;
+
+            break;
+          }
+        }
+      );
+    }
+  );
+
+  return draft;
+}
+
+
+/*************************************************
+ * SAFE JSON FOR HTML TEMPLATE
+ *
+ * Protects against a JSON value accidentally
+ * ending the script tag inside the HTML file.
+ *************************************************/
+
+function weeklyOSSafeJsonForHtml_(
+  value
+) {
+  return JSON.stringify(
+    value
+  )
+    .replace(
+      /</g,
+      "\\u003c"
+    )
+    .replace(
+      />/g,
+      "\\u003e"
+    )
+    .replace(
+      /&/g,
+      "\\u0026"
+    )
+    .replace(
+      /\u2028/g,
+      "\\u2028"
+    )
+    .replace(
+      /\u2029/g,
+      "\\u2029"
+    );
+}
+
+
+/*************************************************
+ * INCLUDE HTML PARTIAL
+ *
+ * This may be used later if the builder HTML is
+ * divided into CSS and JavaScript partial files.
+ *
+ * This function is server-side only, so ending
+ * with an underscore is correct.
+ *************************************************/
+
+function weeklyOSInclude_(
+  fileName
+) {
+  return HtmlService
+    .createHtmlOutputFromFile(
+      fileName
+    )
+    .getContent();
+}
+
+/*************************************************
+ * UI PEOPLE OPTIONS
+ *
+ * Provides a searchable list of company members
+ * for coverage fields.
+ *
+ * Role-specific coverage filtering will come from
+ * ResolverOS later. For now, this keeps entry fast
+ * while still allowing a manually entered name.
+ *************************************************/
+
+function weeklyOSGetUiPeopleOptions_() {
+  const config =
+    weeklyOSGetConfig_();
+
+  const sheet =
+    weeklyOSGetSheetSafe_(
+      config.sheets.contactSheet
+    );
+
+  if (!sheet) {
+    return [];
+  }
+
+  const values =
+    sheet
+      .getDataRange()
+      .getDisplayValues();
+
+  const header =
+    weeklyOSFindContactSheetHeaders_(
+      values
+    );
+
+  const people = [];
+
+  for (
+    let rowIndex =
+      header.headerRow + 1;
+    rowIndex < values.length;
+    rowIndex++
+  ) {
+    const name =
+      weeklyOSNormalizeText_(
+        values[rowIndex][
+          header.nameColumn
+        ]
+      );
+
+    if (!name) {
+      continue;
+    }
+
+    people.push(name);
+  }
+
+  return weeklyOSUniqueStrings_(
+    people
+  ).sort(
+    function (first, second) {
+      return first.localeCompare(
+        second
+      );
+    }
+  );
+}
+
+/*************************************************
+ * UI SWING OPTIONS
+ *
+ * Reads Contact Sheet titles/departments and
+ * returns every performer identified as a Swing.
+ *************************************************/
+
+function weeklyOSGetUiSwingOptions_() {
+  const config = weeklyOSGetConfig_();
+  const sheet = weeklyOSGetSheetSafe_(
+    config.sheets.contactSheet
+  );
+
+  if (!sheet) return [];
+
+  const values = sheet.getDataRange().getDisplayValues();
+  const header = weeklyOSFindContactSheetHeaders_(values);
+  const swings = [];
+
+  for (
+    let rowIndex = header.headerRow + 1;
+    rowIndex < values.length;
+    rowIndex++
+  ) {
+    const row = values[rowIndex];
+    const name = weeklyOSNormalizeText_(
+      row[header.nameColumn]
+    );
+
+    if (!name) continue;
+
+    const title = header.titleColumn >= 0
+      ? weeklyOSNormalizeText_(row[header.titleColumn])
+      : "";
+
+    const department = header.departmentColumn >= 0
+      ? weeklyOSNormalizeText_(row[header.departmentColumn])
+      : "";
+
+    const combined = weeklyOSUpper_(
+      title + " " + department
+    );
+
+    if (combined.indexOf("SWING") >= 0) {
+      swings.push(name);
+    }
+  }
+
+  return weeklyOSUniqueStrings_(swings).sort(
+    function (first, second) {
+      return first.localeCompare(second);
+    }
+  );
+}
+
+
+/*************************************************
+ * UI KNOWN NEW-ACTOR OPTIONS
+ *
+ * Supplies role-to-actor information already
+ * present in the WeekModel. This intentionally
+ * does not guess when WeeklyOS lacks a clear role
+ * mapping.
+ *************************************************/
+
+function weeklyOSGetUiNewActorOptions_(draft) {
+  const options = [];
+
+  if (!draft || !Array.isArray(draft.days)) {
+    return options;
+  }
+
+  draft.days.forEach(function (day) {
+    (day.putIns || []).forEach(function (putIn) {
+      (putIn.newActors || []).forEach(function (item) {
+        weeklyOSPushUiNewActorOption_(options, item);
+      });
+
+      (putIn.assignments || []).forEach(function (assignment) {
+        if (assignment.isNewActor) {
+          weeklyOSPushUiNewActorOption_(options, {
+            role: assignment.role,
+            person: assignment.person,
+            source: assignment.source || "Put-In"
+          });
+        }
+      });
+    });
+
+    (day.companyEvents || []).forEach(function (event) {
+      if (event.role && event.person) {
+        weeklyOSPushUiNewActorOption_(options, {
+          role: event.role,
+          person: event.person,
+          source: event.source || "Company Activity"
+        });
+      }
+
+      (event.assignments || []).forEach(function (assignment) {
+        weeklyOSPushUiNewActorOption_(options, assignment);
+      });
+    });
+  });
+
+  return weeklyOSDeduplicateByKey_(
+    options,
+    function (item) {
+      return weeklyOSUpper_(item.role) + "|" +
+        weeklyOSUpper_(item.person);
+    }
+  );
+}
+
+
+function weeklyOSPushUiNewActorOption_(options, item) {
+  item = item || {};
+
+  const role = weeklyOSNormalizeText_(
+    item.role || item.character || item.track
+  );
+
+  const person = weeklyOSNormalizeText_(
+    item.person || item.name || item.actor
+  );
+
+  if (!role || !person) return;
+
+  options.push({
+    role: role,
+    person: person,
+    source: item.source || "WeeklyOS"
+  });
+}
