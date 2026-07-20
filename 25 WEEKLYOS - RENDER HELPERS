@@ -1,0 +1,1353 @@
+/*************************************************
+ * 25 WEEKLYOS - RENDER HELPERS
+ * Version: 0.1.0
+ * Status: ACTIVE DEVELOPMENT
+ *
+ * Shared formatting, render-object, display-text,
+ * and time helpers used by WeeklyComposerOS and
+ * WeeklyPutInOS.
+ *
+ * This file does not write to a sheet.
+ *************************************************/
+
+
+/*************************************************
+ * PUBLIC API
+ *************************************************/
+
+function WeeklyRenderOS() {
+  return {
+    version:
+      "0.1.0",
+
+    styles:
+      weeklyOSGetRenderStyles_(),
+
+    dayTemplates:
+      weeklyOSGetDayTemplateDefinitions_(),
+
+    createRow:
+      weeklyOSCreateRenderRow_,
+
+    createNote:
+      weeklyOSCreateRenderNote_,
+
+    abbreviateName:
+      weeklyOSAbbreviateName_,
+
+    subtractMinutes:
+      weeklyOSSubtractMinutesFromTime_
+  };
+}
+
+
+/*************************************************
+ * CREATE RENDER ROW
+ *
+ * A render row is the normalized structure that
+ * the future generator will write into the weekly
+ * schedule grid.
+ *************************************************/
+
+function weeklyOSCreateRenderRow_(
+  input
+) {
+  input =
+    input || {};
+
+  return {
+    id:
+      input.id ||
+      weeklyOSUuid_(),
+
+    rowType:
+      weeklyOSNormalizeText_(
+        input.rowType ||
+        "STANDARD"
+      ),
+
+    time:
+      weeklyOSNormalizeText_(
+        input.time
+      ),
+
+    activity:
+      String(
+        input.activity == null
+          ? ""
+          : input.activity
+      ),
+
+    called:
+      weeklyOSNormalizeText_(
+        input.called
+      ),
+
+    style:
+      weeklyOSNormalizeText_(
+        input.style ||
+        "STANDARD"
+      ),
+
+    sourceId:
+      weeklyOSNormalizeText_(
+        input.sourceId
+      ),
+
+    metadata:
+      input.metadata &&
+      typeof input.metadata ===
+        "object"
+        ? weeklyOSDeepClone_(
+            input.metadata
+          )
+        : {}
+  };
+}
+
+
+/*************************************************
+ * CREATE RENDER NOTE
+ *************************************************/
+
+function weeklyOSCreateRenderNote_(
+  input
+) {
+  input =
+    input || {};
+
+  return {
+    id:
+      input.id ||
+      weeklyOSUuid_(),
+
+    category:
+      weeklyOSNormalizeText_(
+        input.category ||
+        "GENERAL"
+      ),
+
+    text:
+      weeklyOSNormalizeMultilineText_(
+        input.text
+      ),
+
+    style:
+      weeklyOSNormalizeText_(
+        input.style ||
+        "STANDARD"
+      ),
+
+    sourceId:
+      weeklyOSNormalizeText_(
+        input.sourceId
+      ),
+
+    metadata:
+      input.metadata &&
+      typeof input.metadata ===
+        "object"
+        ? weeklyOSDeepClone_(
+            input.metadata
+          )
+        : {}
+  };
+}
+
+
+/*************************************************
+ * NORMALIZE MULTILINE TEXT
+ *
+ * Unlike weeklyOSNormalizeText_(), this preserves
+ * intentional line breaks for Put-In assignments
+ * and performance blocks.
+ *************************************************/
+
+function weeklyOSNormalizeMultilineText_(
+  value
+) {
+  return String(
+    value == null
+      ? ""
+      : value
+  )
+    .replace(
+      /\u00A0/g,
+      " "
+    )
+    .replace(
+      /\r\n/g,
+      "\n"
+    )
+    .replace(
+      /\r/g,
+      "\n"
+    )
+    .split("\n")
+    .map(
+      function (line) {
+        return line
+          .replace(
+            /[ \t]+/g,
+            " "
+          )
+          .trim();
+      }
+    )
+    .filter(
+      function (
+        line,
+        index,
+        lines
+      ) {
+        /*
+         * Preserve a single intentional blank line,
+         * but avoid repeated blank rows.
+         */
+        if (line) {
+          return true;
+        }
+
+        return (
+          index > 0 &&
+          index <
+            lines.length - 1 &&
+          lines[index - 1] !==
+            ""
+        );
+      }
+    )
+    .join("\n")
+    .trim();
+}
+
+
+/*************************************************
+ * RENDER STYLE DEFINITIONS
+ *
+ * The generator will convert these semantic styles
+ * into actual Google Sheets formatting.
+ *************************************************/
+
+function weeklyOSGetRenderStyles_() {
+  return {
+    STANDARD: {
+      textColor:
+        "#000000",
+
+      backgroundColor:
+        "#FFFFFF",
+
+      fontFamily:
+        "Arial",
+
+      fontSize:
+        10,
+
+      fontWeight:
+        "normal",
+
+      fontStyle:
+        "normal",
+
+      horizontalAlignment:
+        "left",
+
+      verticalAlignment:
+        "middle",
+
+      wrap:
+        true
+    },
+
+    PERFORMANCE: {
+      textColor:
+        "#000000",
+
+      backgroundColor:
+        "#FFFFFF",
+
+      fontFamily:
+        "Arial",
+
+      fontSize:
+        10,
+
+      fontWeight:
+        "normal",
+
+      fontStyle:
+        "normal",
+
+      horizontalAlignment:
+        "left",
+
+      verticalAlignment:
+        "top",
+
+      wrap:
+        true
+    },
+
+    PERFORMANCE_OUT: {
+      textColor:
+        "#FF0000",
+
+      backgroundColor:
+        "#FFFFFF",
+
+      fontFamily:
+        "Arial",
+
+      fontSize:
+        10,
+
+      fontWeight:
+        "normal",
+
+      fontStyle:
+        "normal",
+
+      horizontalAlignment:
+        "left",
+
+      verticalAlignment:
+        "middle",
+
+      wrap:
+        true
+    },
+
+    NEW_ACTOR: {
+      /*
+       * New-actor blocks and milestones use blue
+       * text to match the established weeklies.
+       */
+      textColor:
+        "#0000FF",
+
+      backgroundColor:
+        "#FFFFFF",
+
+      fontFamily:
+        "Arial",
+
+      fontSize:
+        10,
+
+      fontWeight:
+        "normal",
+
+      fontStyle:
+        "normal",
+
+      horizontalAlignment:
+        "left",
+
+      verticalAlignment:
+        "middle",
+
+      wrap:
+        true
+    },
+
+    HOLIDAY: {
+      textColor:
+        "#000000",
+
+      backgroundColor:
+        "#FFFFFF",
+
+      fontFamily:
+        "Arial",
+
+      fontSize:
+        10,
+
+      fontWeight:
+        "bold",
+
+      fontStyle:
+        "normal",
+
+      horizontalAlignment:
+        "left",
+
+      verticalAlignment:
+        "middle",
+
+      wrap:
+        true
+    },
+
+    DAY_OFF: {
+      textColor:
+        "#F2C94C",
+
+      backgroundColor:
+        "#1155CC",
+
+      fontFamily:
+        "Arial",
+
+      fontSize:
+        10,
+
+      fontWeight:
+        "bold",
+
+      fontStyle:
+        "normal",
+
+      horizontalAlignment:
+        "left",
+
+      verticalAlignment:
+        "middle",
+
+      wrap:
+        true
+    },
+
+    SECTION_HEADER: {
+      textColor:
+        "#F2C94C",
+
+      backgroundColor:
+        "#1155CC",
+
+      fontFamily:
+        "Arial",
+
+      fontSize:
+        10,
+
+      fontWeight:
+        "bold",
+
+      fontStyle:
+        "normal",
+
+      horizontalAlignment:
+        "left",
+
+      verticalAlignment:
+        "middle",
+
+      wrap:
+        true
+    },
+
+    GOLD_DIVIDER: {
+      textColor:
+        "#000000",
+
+      backgroundColor:
+        "#D6A800",
+
+      fontFamily:
+        "Arial",
+
+      fontSize:
+        1,
+
+      fontWeight:
+        "normal",
+
+      fontStyle:
+        "normal",
+
+      horizontalAlignment:
+        "left",
+
+      verticalAlignment:
+        "middle",
+
+      wrap:
+        false
+    },
+
+    NOTES_HEADER: {
+      textColor:
+        "#000000",
+
+      backgroundColor:
+        "#FFFFFF",
+
+      fontFamily:
+        "Arial",
+
+      fontSize:
+        10,
+
+      fontWeight:
+        "bold",
+
+      fontStyle:
+        "normal",
+
+      horizontalAlignment:
+        "left",
+
+      verticalAlignment:
+        "middle",
+
+      wrap:
+        true
+    }
+  };
+}
+
+
+/*************************************************
+ * DAY TEMPLATE DEFINITIONS
+ *************************************************/
+
+function weeklyOSGetDayTemplateDefinitions_() {
+  return {
+    PERFORMANCE_ONLY: {
+      label:
+        "Performance Only",
+
+      standardPerformanceCalls:
+        true,
+
+      goldDivider:
+        false
+    },
+
+    TWO_SHOW_DAY: {
+      label:
+        "Two-Show Day",
+
+      standardPerformanceCalls:
+        true,
+
+      goldDivider:
+        true
+    },
+
+    REHEARSAL_AND_PERFORMANCE: {
+      label:
+        "Rehearsal + Performance",
+
+      standardPerformanceCalls:
+        true,
+
+      goldDivider:
+        true
+    },
+
+    PUT_IN_AND_PERFORMANCE: {
+      label:
+        "Put-In + Performance",
+
+      standardPerformanceCalls:
+        true,
+
+      goldDivider:
+        true,
+
+      fullOnstageAssignments:
+        true
+    },
+
+    WORK_CALL_AND_PERFORMANCE: {
+      label:
+        "Work Call + Performance",
+
+      standardPerformanceCalls:
+        true,
+
+      goldDivider:
+        true
+    },
+
+    MEETING_AND_PERFORMANCE: {
+      label:
+        "Meeting + Performance",
+
+      standardPerformanceCalls:
+        true,
+
+      goldDivider:
+        false
+    },
+
+    DAY_OFF: {
+      label:
+        "AEA Day Off",
+
+      standardPerformanceCalls:
+        false,
+
+      goldDivider:
+        false
+    },
+
+    PUT_IN_ONLY: {
+      label:
+        "Put-In Only",
+
+      standardPerformanceCalls:
+        false,
+
+      goldDivider:
+        false,
+
+      fullOnstageAssignments:
+        true
+    },
+
+    REHEARSAL_ONLY: {
+      label:
+        "Rehearsal Only",
+
+      standardPerformanceCalls:
+        false,
+
+      goldDivider:
+        false
+    },
+
+    WORK_CALL_ONLY: {
+      label:
+        "Work Call Only",
+
+      standardPerformanceCalls:
+        false,
+
+      goldDivider:
+        false
+    },
+
+    MEETING_ONLY: {
+      label:
+        "Meeting Only",
+
+      standardPerformanceCalls:
+        false,
+
+      goldDivider:
+        false
+    },
+
+    OTHER: {
+      label:
+        "Other",
+
+      standardPerformanceCalls:
+        false,
+
+      goldDivider:
+        false
+    }
+  };
+}
+
+
+/*************************************************
+ * BUILD TIME RANGE
+ *************************************************/
+
+function weeklyOSBuildTimeRange_(
+  startTime,
+  endTime
+) {
+  const start =
+    weeklyOSNormalizeDisplayTime_(
+      startTime
+    );
+
+  const end =
+    weeklyOSNormalizeDisplayTime_(
+      endTime
+    );
+
+  if (
+    start &&
+    end
+  ) {
+    return (
+      start +
+      " - " +
+      end
+    );
+  }
+
+  return (
+    start ||
+    end ||
+    ""
+  );
+}
+
+
+/*************************************************
+ * NORMALIZE DISPLAY TIME
+ *
+ * This stays intentionally forgiving because the
+ * source sheets may contain:
+ *
+ * 7:00 PM
+ * 7pm
+ * 7 PM
+ * 12:30pm
+ * Noon
+ * TBD
+ *************************************************/
+
+function weeklyOSNormalizeDisplayTime_(
+  value
+) {
+  const text =
+    weeklyOSNormalizeText_(
+      value
+    );
+
+  if (!text) {
+    return "";
+  }
+
+  const upper =
+    weeklyOSUpper_(
+      text
+    );
+
+  if (
+    upper === "NOON" ||
+    upper === "MIDNIGHT" ||
+    upper === "TBD"
+  ) {
+    return upper === "TBD"
+      ? "TBD"
+      : (
+        upper.charAt(0) +
+        upper
+          .slice(1)
+          .toLowerCase()
+      );
+  }
+
+  const match =
+    text.match(
+      /^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?$/i
+    );
+
+  if (!match) {
+    return text;
+  }
+
+  const hour =
+    Number(
+      match[1]
+    );
+
+  const minute =
+    match[2] == null
+      ? "00"
+      : String(
+          match[2]
+        ).padStart(
+          2,
+          "0"
+        );
+
+  const meridiem =
+    match[3]
+      ? weeklyOSUpper_(
+          match[3]
+        )
+      : "";
+
+  return (
+    hour +
+    ":" +
+    minute +
+    (
+      meridiem
+        ? " " +
+          meridiem
+        : ""
+    )
+  );
+}
+
+
+/*************************************************
+ * BUILD LOCATION TEXT
+ *************************************************/
+
+function weeklyOSBuildLocationText_(
+  title,
+  location
+) {
+  const cleanTitle =
+    weeklyOSNormalizeText_(
+      title
+    );
+
+  const cleanLocation =
+    weeklyOSNormalizeText_(
+      location
+    );
+
+  if (
+    cleanTitle &&
+    cleanLocation
+  ) {
+    return (
+      cleanTitle +
+      " (" +
+      cleanLocation +
+      ")"
+    );
+  }
+
+  return (
+    cleanTitle ||
+    cleanLocation ||
+    ""
+  );
+}
+
+
+/*************************************************
+ * FORMAT OUT SCOPE FOR WEEKLY
+ *************************************************/
+
+function weeklyOSFormatOutScopeForWeekly_(
+  scope
+) {
+  const normalized =
+    weeklyOSUpper_(
+      scope
+    );
+
+  const labels = {
+    ALL:
+      "",
+
+    MAT:
+      "Mat ONLY",
+
+    EVE:
+      "Eve ONLY",
+
+    "MAT & EVE":
+      "Mat & Eve",
+
+    "REHEARSAL & PERFORMANCE":
+      "Rehearsal & Performance",
+
+    "PUT-IN & PERFORMANCE":
+      "Put-In & Performance"
+  };
+
+  if (
+    Object.prototype
+      .hasOwnProperty
+      .call(
+        labels,
+        normalized
+      )
+  ) {
+    return labels[
+      normalized
+    ];
+  }
+
+  return weeklyOSNormalizeText_(
+    scope
+  );
+}
+
+
+/*************************************************
+ * ABBREVIATE PERSON NAME
+ *
+ * Justin Cooley → Justin C.
+ * Liz Doran → Liz D.
+ *
+ * Existing abbreviated names such as "Liz D."
+ * remain unchanged.
+ *************************************************/
+
+function weeklyOSAbbreviateName_(
+  fullName
+) {
+  const normalized =
+    weeklyOSNormalizeText_(
+      fullName
+    );
+
+  if (!normalized) {
+    return "";
+  }
+
+  if (
+    /^[^\s]+\s+[A-Z]\.$/.test(
+      normalized
+    )
+  ) {
+    return normalized;
+  }
+
+  const parts =
+    normalized.split(
+      /\s+/
+    );
+
+  if (
+    parts.length < 2
+  ) {
+    return normalized;
+  }
+
+  const firstName =
+    parts[0];
+
+  const lastName =
+    parts[
+      parts.length - 1
+    ];
+
+  const lastInitial =
+    lastName
+      .replace(
+        /[^A-Za-zÀ-ÖØ-öø-ÿ]/g,
+        ""
+      )
+      .charAt(0);
+
+  if (!lastInitial) {
+    return normalized;
+  }
+
+  return (
+    firstName +
+    " " +
+    lastInitial
+      .toUpperCase() +
+    "."
+  );
+}
+
+
+/*************************************************
+ * TIME SUBTRACTION
+ *************************************************/
+
+function weeklyOSSubtractMinutesFromTime_(
+  timeText,
+  minutesToSubtract
+) {
+  const totalMinutes =
+    weeklyOSTimeToMinutes_(
+      timeText
+    );
+
+  if (
+    totalMinutes === null
+  ) {
+    return "";
+  }
+
+  let adjusted =
+    totalMinutes -
+    Number(
+      minutesToSubtract || 0
+    );
+
+  while (
+    adjusted < 0
+  ) {
+    adjusted +=
+      24 * 60;
+  }
+
+  adjusted =
+    adjusted %
+    (24 * 60);
+
+  return weeklyOSMinutesToDisplayTime_(
+    adjusted
+  );
+}
+
+
+/*************************************************
+ * MINUTES TO DISPLAY TIME
+ *************************************************/
+
+function weeklyOSMinutesToDisplayTime_(
+  totalMinutes
+) {
+  const numeric =
+    Number(
+      totalMinutes
+    );
+
+  if (
+    isNaN(numeric)
+  ) {
+    return "";
+  }
+
+  const normalized =
+    (
+      numeric %
+      (24 * 60) +
+      24 * 60
+    ) %
+    (24 * 60);
+
+  const hour24 =
+    Math.floor(
+      normalized / 60
+    );
+
+  const minute =
+    normalized % 60;
+
+  const meridiem =
+    hour24 >= 12
+      ? "PM"
+      : "AM";
+
+  let hour12 =
+    hour24 % 12;
+
+  if (
+    hour12 === 0
+  ) {
+    hour12 = 12;
+  }
+
+  return (
+    hour12 +
+    ":" +
+    String(
+      minute
+    ).padStart(
+      2,
+      "0"
+    ) +
+    " " +
+    meridiem
+  );
+}
+
+
+/*************************************************
+ * DISPLAY DAY LABEL
+ *************************************************/
+
+function weeklyOSBuildRenderDayLabel_(
+  day
+) {
+  if (!day) {
+    return "";
+  }
+
+  return (
+    day.dateLabel ||
+    weeklyOSFormatDate_(
+      day.date,
+      "EEEE, MMMM d"
+    )
+  );
+}
+
+
+/*************************************************
+ * DISPLAY NOTE BULLET
+ *************************************************/
+
+function weeklyOSBuildRenderNoteBullet_(
+  note
+) {
+  if (!note) {
+    return "";
+  }
+
+  const text =
+    typeof note ===
+      "string"
+      ? note
+      : note.text;
+
+  const normalized =
+    weeklyOSNormalizeMultilineText_(
+      text
+    );
+
+  if (!normalized) {
+    return "";
+  }
+
+  if (
+    normalized.indexOf(
+      "- "
+    ) === 0
+  ) {
+    return normalized;
+  }
+
+  return (
+    "- " +
+    normalized
+  );
+}
+
+
+/*************************************************
+ * FIND STYLE DEFINITION
+ *************************************************/
+
+function weeklyOSGetRenderStyle_(
+  styleName
+) {
+  const styles =
+    weeklyOSGetRenderStyles_();
+
+  const normalized =
+    weeklyOSUpper_(
+      styleName ||
+      "STANDARD"
+    );
+
+  return (
+    styles[
+      normalized
+    ] ||
+    styles.STANDARD
+  );
+}
+
+
+/*************************************************
+ * CHECK IF ITEM IS NEW-ACTOR CONTENT
+ *************************************************/
+
+function weeklyOSRenderItemIsNewActor_(
+  item
+) {
+  return Boolean(
+    item &&
+    weeklyOSUpper_(
+      item.style
+    ) ===
+      "NEW_ACTOR"
+  );
+}
+
+
+/*************************************************
+ * CHECK IF ROW IS DIVIDER
+ *************************************************/
+
+function weeklyOSRenderRowIsDivider_(
+  row
+) {
+  return Boolean(
+    row &&
+    (
+      weeklyOSUpper_(
+        row.rowType
+      ) ===
+        "DIVIDER" ||
+      weeklyOSUpper_(
+        row.style
+      ) ===
+        "GOLD_DIVIDER"
+    )
+  );
+}
+
+
+/*************************************************
+ * CHECK IF DAY HAS NOTES
+ *************************************************/
+
+function weeklyOSComposedDayHasNotes_(
+  composedDay
+) {
+  return Boolean(
+    composedDay &&
+    Array.isArray(
+      composedDay.notes
+    ) &&
+    composedDay.notes.some(
+      function (note) {
+        return Boolean(
+          note &&
+          note.text
+        );
+      }
+    )
+  );
+}
+
+
+/*************************************************
+ * BUILD SIMPLE COMPOSED-DAY SUMMARY
+ *************************************************/
+
+function weeklyOSBuildComposedDaySummary_(
+  composedDay
+) {
+  if (!composedDay) {
+    return null;
+  }
+
+  return {
+    date:
+      composedDay.date,
+
+    templateType:
+      composedDay.templateType,
+
+    headerText:
+      composedDay.headerText,
+
+    timelineRows:
+      Array.isArray(
+        composedDay.timeline
+      )
+        ? composedDay
+            .timeline
+            .length
+        : 0,
+
+    noteCount:
+      Array.isArray(
+        composedDay.notes
+      )
+        ? composedDay
+            .notes
+            .length
+        : 0,
+
+    hasGoldDivider:
+      Boolean(
+        composedDay.rendering &&
+        composedDay.rendering
+          .hasGoldDivider
+      ),
+
+    hasNewActorContent:
+      Boolean(
+        composedDay.rendering &&
+        composedDay.rendering
+          .hasNewActorContent
+      ),
+
+    hideGuestSpeller:
+      Boolean(
+        composedDay.rendering &&
+        composedDay.rendering
+          .hideGuestSpeller
+      )
+  };
+}
+
+
+/*************************************************
+ * BUILD FULL COMPOSITION SUMMARY
+ *************************************************/
+
+function weeklyOSBuildCompositionSummary_(
+  composedDraft
+) {
+  if (!composedDraft) {
+    return null;
+  }
+
+  const composedDays =
+    composedDraft.composition &&
+    Array.isArray(
+      composedDraft.composition
+        .days
+    )
+      ? composedDraft
+          .composition
+          .days
+      : [];
+
+  return {
+    weekStart:
+      composedDraft.weekStart,
+
+    weekEnd:
+      composedDraft.weekEnd,
+
+    composedAt:
+      composedDraft.composition
+        ? composedDraft
+            .composition
+            .composedAt
+        : "",
+
+    days:
+      composedDays.map(
+        weeklyOSBuildComposedDaySummary_
+      ),
+
+    totals: {
+      timelineRows:
+        composedDays.reduce(
+          function (
+            total,
+            day
+          ) {
+            return (
+              total +
+              (
+                Array.isArray(
+                  day.timeline
+                )
+                  ? day
+                      .timeline
+                      .length
+                  : 0
+              )
+            );
+          },
+          0
+        ),
+
+      notes:
+        composedDays.reduce(
+          function (
+            total,
+            day
+          ) {
+            return (
+              total +
+              (
+                Array.isArray(
+                  day.notes
+                )
+                  ? day.notes
+                      .length
+                  : 0
+              )
+            );
+          },
+          0
+        ),
+
+      newActorDays:
+        composedDays.filter(
+          function (day) {
+            return Boolean(
+              day.rendering &&
+              day.rendering
+                .hasNewActorContent
+            );
+          }
+        ).length
+    }
+  };
+}
