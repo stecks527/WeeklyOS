@@ -1,0 +1,1832 @@
+/*************************************************
+ * 25 WEEKLYOS - PUT IN ENGINE
+ * Version: 0.1.0
+ * Status: ACTIVE DEVELOPMENT
+ *
+ * Builds and composes structured Put-In activity.
+ *
+ * Core WeeklyOS Put-In rules:
+ *
+ * - Weekly-facing title is always PUT-IN.
+ *
+ * - Guest Speller names are never included in
+ *   WeeklyOS-facing output.
+ *
+ * - Every principal/onstage character is listed.
+ *
+ * - Default assignments use the current main cast.
+ *
+ * - Incoming actors replace only their applicable
+ *   characters.
+ *
+ * - All assignments remain editable.
+ *
+ * - Any Put-In involving new actors uses the
+ *   NEW_ACTOR rendering style, which will become
+ *   blue text in the generated weekly.
+ *************************************************/
+
+
+/*************************************************
+ * PUBLIC API
+ *************************************************/
+
+function WeeklyPutInOS() {
+  return {
+    version:
+      "0.1.0",
+
+    ensureAssignments:
+      weeklyOSEnsurePutInAssignments_,
+
+    buildAssignments:
+      weeklyOSBuildDefaultPutInAssignments_,
+
+    applyNewActors:
+      weeklyOSApplyPutInNewActorOverrides_,
+
+    readCurrentCast:
+      weeklyOSReadCurrentOnstageAssignments_,
+
+    appendRows:
+      weeklyOSAppendPutInRows_
+  };
+}
+
+
+/*************************************************
+ * ENSURE ALL PUT-INS HAVE ASSIGNMENTS
+ *************************************************/
+
+function weeklyOSEnsurePutInAssignments_(
+  draft
+) {
+  if (
+    !draft ||
+    !Array.isArray(draft.days)
+  ) {
+    return draft;
+  }
+
+  const currentCast =
+    weeklyOSReadCurrentOnstageAssignments_();
+
+  draft.days.forEach(
+    function (day) {
+      weeklyOSEnsureDayModel_(
+        day
+      );
+
+      day.putIns.forEach(
+        function (putIn) {
+          weeklyOSEnsurePutInModel_(
+            putIn
+          );
+
+          putIn.title =
+            "PUT-IN";
+
+          const existingAssignments =
+            Array.isArray(
+              putIn.assignments
+            )
+              ? putIn.assignments
+              : [];
+
+          if (
+            !existingAssignments.length
+          ) {
+            putIn.assignments =
+              weeklyOSBuildDefaultPutInAssignments_(
+                currentCast
+              );
+          } else {
+            putIn.assignments =
+              weeklyOSMergePutInAssignmentsWithCurrentCast_(
+                existingAssignments,
+                currentCast
+              );
+          }
+
+          weeklyOSApplyPutInNewActorOverrides_(
+            putIn
+          );
+
+          weeklyOSMarkPutInAssignmentStyles_(
+            putIn
+          );
+        }
+      );
+    }
+  );
+
+  return draft;
+}
+
+
+/*************************************************
+ * ENSURE PUT-IN MODEL
+ *************************************************/
+
+function weeklyOSEnsurePutInModel_(
+  putIn
+) {
+  putIn.id =
+    putIn.id ||
+    weeklyOSUuid_();
+
+  putIn.number =
+    weeklyOSNormalizeText_(
+      putIn.number
+    );
+
+  putIn.title =
+    "PUT-IN";
+
+  putIn.startTime =
+    weeklyOSNormalizeText_(
+      putIn.startTime
+    );
+
+  putIn.endTime =
+    weeklyOSNormalizeText_(
+      putIn.endTime
+    );
+
+  putIn.location =
+    weeklyOSNormalizeText_(
+      putIn.location ||
+      "Theatre"
+    );
+
+  putIn.crewCall =
+    weeklyOSNormalizeText_(
+      putIn.crewCall
+    );
+
+  putIn.segments =
+    Array.isArray(
+      putIn.segments
+    )
+      ? putIn.segments
+      : [];
+
+  putIn.assignments =
+    Array.isArray(
+      putIn.assignments
+    )
+      ? putIn.assignments
+      : [];
+
+  putIn.newActors =
+    Array.isArray(
+      putIn.newActors
+    )
+      ? putIn.newActors
+      : [];
+
+  putIn.creativeTeam =
+    weeklyOSNormalizeStringArray_(
+      putIn.creativeTeam
+    );
+
+  putIn.rehearsalPianist =
+    weeklyOSNormalizeText_(
+      putIn.rehearsalPianist
+    );
+
+  putIn.notes =
+    weeklyOSNormalizeText_(
+      putIn.notes
+    );
+
+  putIn.requiresReview =
+    putIn.requiresReview !==
+    false;
+
+  return putIn;
+}
+
+
+/*************************************************
+ * BUILD DEFAULT ASSIGNMENTS
+ *************************************************/
+
+function weeklyOSBuildDefaultPutInAssignments_(
+  currentCast
+) {
+  return (
+    Array.isArray(currentCast)
+      ? currentCast
+      : []
+  ).map(
+    function (assignment) {
+      return {
+        id:
+          weeklyOSUuid_(),
+
+        role:
+          weeklyOSNormalizeText_(
+            assignment.role
+          ),
+
+        person:
+          weeklyOSNormalizeText_(
+            assignment.person
+          ),
+
+        defaultPerson:
+          weeklyOSNormalizeText_(
+            assignment.person
+          ),
+
+        isNewActor:
+          false,
+
+        manuallyEdited:
+          false,
+
+        source:
+          assignment.source ||
+          "Cast List",
+
+        sourceRow:
+          assignment.sourceRow ||
+          null
+      };
+    }
+  );
+}
+
+
+/*************************************************
+ * MERGE EXISTING ASSIGNMENTS WITH CURRENT CAST
+ *
+ * Preserves manual changes while adding any new
+ * roles that now exist in Cast List.
+ *************************************************/
+
+function weeklyOSMergePutInAssignmentsWithCurrentCast_(
+  existingAssignments,
+  currentCast
+) {
+  const merged = [];
+
+  const existingByRole = {};
+
+  (
+    Array.isArray(
+      existingAssignments
+    )
+      ? existingAssignments
+      : []
+  ).forEach(
+    function (assignment) {
+      const roleKey =
+        weeklyOSNormalizePutInRoleKey_(
+          assignment.role
+        );
+
+      if (!roleKey) {
+        return;
+      }
+
+      existingByRole[
+        roleKey
+      ] =
+        weeklyOSNormalizePutInAssignment_(
+          assignment
+        );
+    }
+  );
+
+  (
+    Array.isArray(currentCast)
+      ? currentCast
+      : []
+  ).forEach(
+    function (castAssignment) {
+      const roleKey =
+        weeklyOSNormalizePutInRoleKey_(
+          castAssignment.role
+        );
+
+      if (!roleKey) {
+        return;
+      }
+
+      if (
+        existingByRole[
+          roleKey
+        ]
+      ) {
+        const existing =
+          existingByRole[
+            roleKey
+          ];
+
+        existing.defaultPerson =
+          existing.defaultPerson ||
+          castAssignment.person ||
+          "";
+
+        merged.push(
+          existing
+        );
+
+        delete existingByRole[
+          roleKey
+        ];
+
+        return;
+      }
+
+      merged.push({
+        id:
+          weeklyOSUuid_(),
+
+        role:
+          weeklyOSNormalizeText_(
+            castAssignment.role
+          ),
+
+        person:
+          weeklyOSNormalizeText_(
+            castAssignment.person
+          ),
+
+        defaultPerson:
+          weeklyOSNormalizeText_(
+            castAssignment.person
+          ),
+
+        isNewActor:
+          false,
+
+        manuallyEdited:
+          false,
+
+        source:
+          castAssignment.source ||
+          "Cast List",
+
+        sourceRow:
+          castAssignment.sourceRow ||
+          null
+      });
+    }
+  );
+
+  /*
+   * Preserve any custom assignment roles that are
+   * not represented in the current Cast List.
+   */
+  Object.keys(
+    existingByRole
+  ).forEach(
+    function (roleKey) {
+      merged.push(
+        existingByRole[
+          roleKey
+        ]
+      );
+    }
+  );
+
+  return merged;
+}
+
+
+/*************************************************
+ * NORMALIZE ASSIGNMENT
+ *************************************************/
+
+function weeklyOSNormalizePutInAssignment_(
+  assignment
+) {
+  assignment =
+    assignment || {};
+
+  return {
+    id:
+      assignment.id ||
+      weeklyOSUuid_(),
+
+    role:
+      weeklyOSNormalizeText_(
+        assignment.role
+      ),
+
+    person:
+      weeklyOSNormalizeText_(
+        assignment.person
+      ),
+
+    defaultPerson:
+      weeklyOSNormalizeText_(
+        assignment.defaultPerson ||
+        assignment.person
+      ),
+
+    isNewActor:
+      Boolean(
+        assignment.isNewActor
+      ),
+
+    manuallyEdited:
+      Boolean(
+        assignment.manuallyEdited
+      ),
+
+    source:
+      assignment.source ||
+      "Manual",
+
+    sourceRow:
+      assignment.sourceRow ||
+      null
+  };
+}
+
+
+/*************************************************
+ * APPLY NEW ACTOR OVERRIDES
+ *
+ * Expected putIn.newActors structure:
+ *
+ * [
+ *   {
+ *     person: "Alex Newell",
+ *     role: "Rona"
+ *   },
+ *   {
+ *     person: "Nina White",
+ *     role: "Olive"
+ *   }
+ * ]
+ *************************************************/
+
+function weeklyOSApplyPutInNewActorOverrides_(
+  putIn
+) {
+  const newActors =
+    weeklyOSNormalizePutInNewActors_(
+      putIn.newActors
+    );
+
+  putIn.newActors =
+    newActors;
+
+  newActors.forEach(
+    function (newActor) {
+      const targetRoleKey =
+        weeklyOSNormalizePutInRoleKey_(
+          newActor.role
+        );
+
+      if (
+        !targetRoleKey ||
+        !newActor.person
+      ) {
+        return;
+      }
+
+      const matchingAssignment =
+        putIn.assignments.find(
+          function (assignment) {
+            return (
+              weeklyOSNormalizePutInRoleKey_(
+                assignment.role
+              ) ===
+              targetRoleKey
+            );
+          }
+        );
+
+      if (matchingAssignment) {
+        matchingAssignment.person =
+          newActor.person;
+
+        matchingAssignment.isNewActor =
+          true;
+
+        matchingAssignment.manuallyEdited =
+          true;
+
+        matchingAssignment.source =
+          newActor.source ||
+          "New Hire Activity";
+
+        return;
+      }
+
+      /*
+       * If the new actor's role is not found in the
+       * Cast List, keep it as a custom assignment so
+       * it still appears in the Put-In.
+       */
+      putIn.assignments.push({
+        id:
+          weeklyOSUuid_(),
+
+        role:
+          newActor.role,
+
+        person:
+          newActor.person,
+
+        defaultPerson:
+          "",
+
+        isNewActor:
+          true,
+
+        manuallyEdited:
+          true,
+
+        source:
+          newActor.source ||
+          "New Hire Activity",
+
+        sourceRow:
+          newActor.sourceRow ||
+          null
+      });
+    }
+  );
+
+  return putIn;
+}
+
+
+/*************************************************
+ * NORMALIZE NEW ACTORS
+ *************************************************/
+
+function weeklyOSNormalizePutInNewActors_(
+  newActors
+) {
+  const normalized = [];
+
+  (
+    Array.isArray(newActors)
+      ? newActors
+      : []
+  ).forEach(
+    function (item) {
+      if (!item) {
+        return;
+      }
+
+      if (
+        typeof item ===
+        "string"
+      ) {
+        normalized.push({
+          id:
+            weeklyOSUuid_(),
+
+          person:
+            weeklyOSNormalizeText_(
+              item
+            ),
+
+          role:
+            "",
+
+          source:
+            "Manual",
+
+          sourceRow:
+            null
+        });
+
+        return;
+      }
+
+      const person =
+        weeklyOSNormalizeText_(
+          item.person ||
+          item.name
+        );
+
+      const role =
+        weeklyOSNormalizeText_(
+          item.role ||
+          item.character ||
+          item.track
+        );
+
+      if (
+        !person &&
+        !role
+      ) {
+        return;
+      }
+
+      normalized.push({
+        id:
+          item.id ||
+          weeklyOSUuid_(),
+
+        person:
+          person,
+
+        role:
+          role,
+
+        source:
+          item.source ||
+          "Manual",
+
+        sourceRow:
+          item.sourceRow ||
+          null
+      });
+    }
+  );
+
+  return normalized;
+}
+
+
+/*************************************************
+ * MARK ASSIGNMENT STYLES
+ *************************************************/
+
+function weeklyOSMarkPutInAssignmentStyles_(
+  putIn
+) {
+  const newActorNames = {};
+
+  (
+    putIn.newActors || []
+  ).forEach(
+    function (newActor) {
+      const personKey =
+        weeklyOSUpper_(
+          newActor.person
+        );
+
+      if (personKey) {
+        newActorNames[
+          personKey
+        ] = true;
+      }
+    }
+  );
+
+  putIn.assignments.forEach(
+    function (assignment) {
+      const personKey =
+        weeklyOSUpper_(
+          assignment.person
+        );
+
+      assignment.isNewActor =
+        Boolean(
+          assignment.isNewActor ||
+          newActorNames[
+            personKey
+          ]
+        );
+    }
+  );
+
+  putIn.hasNewActors =
+    weeklyOSPutInHasNewActors_(
+      putIn
+    );
+
+  return putIn;
+}
+
+
+/*************************************************
+ * READ CURRENT ONSTAGE ASSIGNMENTS
+ *
+ * Flexible reader for Cast List.
+ *
+ * WeeklyOS attempts to identify:
+ *
+ * - Character / Role / Track
+ * - Actor / Performer / Name
+ *
+ * Swings, understudies, crew, musicians, and
+ * Guest Spellers are excluded from the default
+ * main-cast Put-In assignment list.
+ *************************************************/
+
+function weeklyOSReadCurrentOnstageAssignments_() {
+  const sheet =
+    weeklyOSFindCastListSheet_();
+
+  if (!sheet) {
+    weeklyOSLog_(
+      "Put-In assignment engine could not find Cast List."
+    );
+
+    return [];
+  }
+
+  const values =
+    sheet
+      .getDataRange()
+      .getDisplayValues();
+
+  const header =
+    weeklyOSFindCastListHeaders_(
+      values
+    );
+
+  if (
+    header.roleColumn < 0 ||
+    header.personColumn < 0
+  ) {
+    weeklyOSLog_(
+      "Put-In assignment engine could not identify the Cast List role and actor columns.",
+      header
+    );
+
+    return [];
+  }
+
+  const assignments = [];
+
+  for (
+    let rowIndex =
+      header.headerRow + 1;
+    rowIndex < values.length;
+    rowIndex++
+  ) {
+    const row =
+      values[
+        rowIndex
+      ];
+
+    const role =
+      weeklyOSNormalizeText_(
+        row[
+          header.roleColumn
+        ]
+      );
+
+    const person =
+      weeklyOSNormalizeText_(
+        row[
+          header.personColumn
+        ]
+      );
+
+    if (
+      !role ||
+      !person
+    ) {
+      continue;
+    }
+
+    if (
+      weeklyOSCastListRowIsNonOnstage_(
+        role,
+        person
+      )
+    ) {
+      continue;
+    }
+
+    assignments.push({
+      role:
+        role,
+
+      person:
+        person,
+
+      source:
+        sheet.getName(),
+
+      sourceRow:
+        rowIndex + 1
+    });
+  }
+
+  return weeklyOSSortPutInAssignments_(
+    weeklyOSDeduplicateByKey_(
+      assignments,
+      function (item) {
+        return item.role;
+      }
+    )
+  );
+}
+
+
+/*************************************************
+ * FIND CAST LIST SHEET
+ *************************************************/
+
+function weeklyOSFindCastListSheet_() {
+  const spreadsheet =
+    weeklyOSGetSpreadsheet_();
+
+  const possibleNames = [
+    "Cast List",
+    "CAST LIST",
+    "Current Cast",
+    "Cast"
+  ];
+
+  for (
+    let index = 0;
+    index <
+      possibleNames.length;
+    index++
+  ) {
+    const sheet =
+      spreadsheet.getSheetByName(
+        possibleNames[
+          index
+        ]
+      );
+
+    if (sheet) {
+      return sheet;
+    }
+  }
+
+  return null;
+}
+
+
+/*************************************************
+ * FIND CAST LIST HEADERS
+ *************************************************/
+
+function weeklyOSFindCastListHeaders_(
+  values
+) {
+  let best = {
+    headerRow:
+      0,
+
+    roleColumn:
+      -1,
+
+    personColumn:
+      -1,
+
+    score:
+      -1
+  };
+
+  for (
+    let rowIndex = 0;
+    rowIndex <
+      Math.min(
+        values.length,
+        35
+      );
+    rowIndex++
+  ) {
+    const normalizedRow =
+      values[
+        rowIndex
+      ].map(
+        weeklyOSUpper_
+      );
+
+    const roleColumn =
+      weeklyOSFindColumnByKeywords_(
+        normalizedRow,
+        [
+          "CHARACTER",
+          "ROLE",
+          "TRACK"
+        ]
+      );
+
+    const personColumn =
+      weeklyOSFindColumnByKeywords_(
+        normalizedRow,
+        [
+          "ACTOR",
+          "PERFORMER",
+          "NAME"
+        ]
+      );
+
+    let score = 0;
+
+    if (
+      roleColumn >= 0
+    ) {
+      score += 5;
+    }
+
+    if (
+      personColumn >= 0
+    ) {
+      score += 5;
+    }
+
+    if (
+      score > best.score
+    ) {
+      best = {
+        headerRow:
+          rowIndex,
+
+        roleColumn:
+          roleColumn,
+
+        personColumn:
+          personColumn,
+
+        score:
+          score
+      };
+    }
+  }
+
+  return best;
+}
+
+
+/*************************************************
+ * EXCLUDE NON-ONSTAGE CAST LIST ROWS
+ *************************************************/
+
+function weeklyOSCastListRowIsNonOnstage_(
+  role,
+  person
+) {
+  const roleKey =
+    weeklyOSNormalizePutInRoleKey_(
+      role
+    );
+
+  const exactExcludedRoleKeys = [
+    "PSM",
+    "ASM",
+    "SM",
+    "PA",
+    "STAGEMANAGEMENT",
+    "PRODUCTIONSTAGEMANAGER",
+    "ASSISTANTSTAGEMANAGER"
+  ];
+
+  if (
+    exactExcludedRoleKeys.indexOf(
+      roleKey
+    ) >= 0
+  ) {
+    return true;
+  }
+
+  const combined =
+    weeklyOSUpper_(
+      role +
+      " " +
+      person
+    );
+
+  const excludedKeywords = [
+    "GUEST SPELLER",
+    "SWING",
+    "UNDERSTUDY",
+    "VACATION SWING",
+    "STAGE MANAGEMENT",
+    "STAGE MANAGER",
+    "PRODUCTION STAGE MANAGER",
+    "ASSISTANT STAGE MANAGER",
+    "CREW",
+    "MUSICIAN",
+    "CONDUCTOR",
+    "MUSIC DIRECTOR",
+    "DANCE CAPTAIN",
+    "ASSISTANT",
+    "SUB"
+  ];
+
+  return excludedKeywords.some(
+    function (keyword) {
+      return (
+        combined.indexOf(
+          keyword
+        ) >= 0
+      );
+    }
+  );
+}
+
+
+/*************************************************
+ * SORT PUT-IN ASSIGNMENTS
+ *
+ * Spelling Bee's known onstage order is used when
+ * recognizable. Unknown roles remain after those
+ * roles in their original relative order.
+ *************************************************/
+
+function weeklyOSSortPutInAssignments_(
+  assignments
+) {
+  const preferredOrder = [
+    "CHIP",
+    "SCHWARTZY",
+    "LOGAINNE",
+    "MARCY",
+    "RONA",
+    "PANCH",
+    "LEAF",
+    "MITCH",
+    "BARFEE",
+    "BARFÉE",
+    "OLIVE"
+  ];
+
+  return (
+    Array.isArray(assignments)
+      ? assignments
+      : []
+  )
+    .map(
+      function (item, index) {
+        return {
+          item:
+            item,
+
+          originalIndex:
+            index,
+
+          order:
+            weeklyOSGetPreferredRoleOrder_(
+              item.role,
+              preferredOrder
+            )
+        };
+      }
+    )
+    .sort(
+      function (first, second) {
+        if (
+          first.order !==
+          second.order
+        ) {
+          return (
+            first.order -
+            second.order
+          );
+        }
+
+        return (
+          first.originalIndex -
+          second.originalIndex
+        );
+      }
+    )
+    .map(
+      function (entry) {
+        return entry.item;
+      }
+    );
+}
+
+
+function weeklyOSGetPreferredRoleOrder_(
+  role,
+  preferredOrder
+) {
+  const normalized =
+    weeklyOSNormalizePutInRoleKey_(
+      role
+    );
+
+  for (
+    let index = 0;
+    index <
+      preferredOrder.length;
+    index++
+  ) {
+    const preferred =
+      weeklyOSNormalizePutInRoleKey_(
+        preferredOrder[
+          index
+        ]
+      );
+
+    if (
+      normalized ===
+      preferred ||
+      normalized.indexOf(
+        preferred
+      ) >= 0 ||
+      preferred.indexOf(
+        normalized
+      ) >= 0
+    ) {
+      return index;
+    }
+  }
+
+  return (
+    preferredOrder.length +
+    100
+  );
+}
+
+
+/*************************************************
+ * NORMALIZE ROLE KEY
+ *************************************************/
+
+function weeklyOSNormalizePutInRoleKey_(
+  role
+) {
+  return weeklyOSUpper_(
+    role
+  )
+    .normalize(
+      "NFD"
+    )
+    .replace(
+      /[\u0300-\u036f]/g,
+      ""
+    )
+    .replace(
+      /[^A-Z0-9]/g,
+      ""
+    );
+}
+
+
+/*************************************************
+ * APPEND PUT-IN ROWS
+ *
+ * Produces rows for:
+ *
+ * - Crew call
+ * - Optional timed segments
+ * - Main PUT-IN block
+ * - Optional notes segment
+ *************************************************/
+
+function weeklyOSAppendPutInRows_(
+  timeline,
+  putIn
+) {
+  weeklyOSEnsurePutInModel_(
+    putIn
+  );
+
+  const style =
+    weeklyOSPutInHasNewActors_(
+      putIn
+    )
+      ? "NEW_ACTOR"
+      : "STANDARD";
+
+  const crewCallTime =
+    weeklyOSResolvePutInCrewCallTime_(
+      putIn
+    );
+
+  if (crewCallTime) {
+    timeline.push(
+      weeklyOSCreateRenderRow_({
+        rowType:
+          "PUT_IN_CREW_CALL",
+
+        time:
+          crewCallTime,
+
+        activity:
+          "Crew Call",
+
+        called:
+          putIn.crewCallCalled ||
+          "FULL Crew",
+
+        style:
+          style,
+
+        sourceId:
+          putIn.id
+      })
+    );
+  }
+
+  putIn.segments.forEach(
+    function (segment) {
+      weeklyOSEnsurePutInSegment_(
+        segment
+      );
+
+      timeline.push(
+        weeklyOSCreateRenderRow_({
+          rowType:
+            "PUT_IN_SEGMENT",
+
+          time:
+            weeklyOSBuildTimeRange_(
+              segment.startTime,
+              segment.endTime
+            ),
+
+          activity:
+            weeklyOSBuildPutInSegmentActivity_(
+              segment
+            ),
+
+          called:
+            segment.called.join(
+              ", "
+            ),
+
+          style:
+            weeklyOSPutInSegmentUsesNewActorStyle_(
+              segment,
+              putIn
+            )
+              ? "NEW_ACTOR"
+              : style,
+
+          sourceId:
+            segment.id
+        })
+      );
+    }
+  );
+
+  timeline.push(
+    weeklyOSCreateRenderRow_({
+      rowType:
+        "PUT_IN",
+
+      time:
+        weeklyOSBuildTimeRange_(
+          putIn.startTime,
+          putIn.endTime
+        ),
+
+      activity:
+        weeklyOSBuildPutInActivityText_(
+          putIn
+        ),
+
+      called:
+        weeklyOSBuildPutInCalledList_(
+          putIn
+        ),
+
+      style:
+        style,
+
+      sourceId:
+        putIn.id
+    })
+  );
+}
+
+
+/*************************************************
+ * PUT-IN SEGMENT MODEL
+ *************************************************/
+
+function weeklyOSEnsurePutInSegment_(
+  segment
+) {
+  segment.id =
+    segment.id ||
+    weeklyOSUuid_();
+
+  segment.title =
+    weeklyOSNormalizeText_(
+      segment.title ||
+      "Put-In Segment"
+    );
+
+  segment.startTime =
+    weeklyOSNormalizeText_(
+      segment.startTime
+    );
+
+  segment.endTime =
+    weeklyOSNormalizeText_(
+      segment.endTime
+    );
+
+  segment.location =
+    weeklyOSNormalizeText_(
+      segment.location
+    );
+
+  segment.called =
+    weeklyOSNormalizeStringArray_(
+      segment.called
+    );
+
+  segment.notes =
+    weeklyOSNormalizeText_(
+      segment.notes
+    );
+
+  segment.isNewActorActivity =
+    Boolean(
+      segment
+        .isNewActorActivity
+    );
+
+  return segment;
+}
+
+
+/*************************************************
+ * RESOLVE PUT-IN CREW CALL
+ *
+ * putIn.crewCall may contain:
+ *
+ * - "12:30 PM"
+ * - a manually entered crew-call time
+ *
+ * If blank, default to 30 minutes before the
+ * Put-In start when possible.
+ *************************************************/
+
+function weeklyOSResolvePutInCrewCallTime_(
+  putIn
+) {
+  if (putIn.crewCall) {
+    return putIn.crewCall;
+  }
+
+  if (!putIn.startTime) {
+    return "";
+  }
+
+  return weeklyOSSubtractMinutesFromTime_(
+    putIn.startTime,
+    30
+  );
+}
+
+
+/*************************************************
+ * BUILD PUT-IN SEGMENT ACTIVITY
+ *************************************************/
+
+function weeklyOSBuildPutInSegmentActivity_(
+  segment
+) {
+  const parts = [];
+
+  if (segment.title) {
+    parts.push(
+      weeklyOSBuildLocationText_(
+        segment.title,
+        segment.location
+      )
+    );
+  }
+
+  if (segment.notes) {
+    parts.push(
+      segment.notes
+    );
+  }
+
+  return parts.join(
+    " • "
+  );
+}
+
+
+/*************************************************
+ * BUILD MAIN PUT-IN ACTIVITY TEXT
+ *************************************************/
+
+function weeklyOSBuildPutInActivityText_(
+  putIn
+) {
+  const lines = [];
+
+  let title =
+    "PUT-IN";
+
+  if (putIn.number) {
+    title +=
+      " #" +
+      putIn.number;
+  }
+
+  if (
+    putIn.creativeTeam &&
+    putIn.creativeTeam.length
+  ) {
+    title +=
+      " w/" +
+      putIn.creativeTeam
+        .join(" + ");
+  }
+
+  lines.push(
+    title
+  );
+
+  if (
+    putIn.rehearsalPianist
+  ) {
+    lines.push(
+      "Rehearsal Pianist = " +
+      putIn.rehearsalPianist
+    );
+  }
+
+  weeklyOSSortPutInAssignments_(
+    putIn.assignments
+  ).forEach(
+    function (assignment) {
+      if (
+        !assignment.role &&
+        !assignment.person
+      ) {
+        return;
+      }
+
+      lines.push(
+        weeklyOSBuildPutInAssignmentLine_(
+          assignment
+        )
+      );
+    }
+  );
+
+  if (putIn.notes) {
+    lines.push(
+      putIn.notes
+    );
+  }
+
+  return lines.join(
+    "\n"
+  );
+}
+
+
+/*************************************************
+ * BUILD ASSIGNMENT LINE
+ *
+ * Existing handwritten weeklies generally use:
+ *
+ * DeMarius C. = Mitch
+ * Cecilia S. = Schwartzy
+ *************************************************/
+
+function weeklyOSBuildPutInAssignmentLine_(
+  assignment
+) {
+  const person =
+    weeklyOSAbbreviateName_(
+      assignment.person
+    );
+
+  const role =
+    weeklyOSNormalizeText_(
+      assignment.role
+    );
+
+  if (
+    person &&
+    role
+  ) {
+    return (
+      person +
+      " = " +
+      role
+    );
+  }
+
+  return (
+    person ||
+    role
+  );
+}
+
+
+/*************************************************
+ * BUILD PUT-IN CALLED LIST
+ *
+ * Lists all onstage performers assigned to the
+ * Put-In without exposing Guest Spellers.
+ *************************************************/
+
+function weeklyOSBuildPutInCalledList_(
+  putIn
+) {
+  return weeklyOSUniqueStrings_(
+    (
+      putIn.assignments || []
+    )
+      .map(
+        function (assignment) {
+          return weeklyOSAbbreviateName_(
+            assignment.person
+          );
+        }
+      )
+      .filter(Boolean)
+  ).join(", ");
+}
+
+
+/*************************************************
+ * PUT-IN NEW ACTOR STYLE
+ *************************************************/
+
+function weeklyOSPutInHasNewActors_(
+  putIn
+) {
+  if (
+    Boolean(
+      putIn.hasNewActors
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    (
+      putIn.newActors ||
+      []
+    ).length
+  ) {
+    return true;
+  }
+
+  return (
+    putIn.assignments ||
+    []
+  ).some(
+    function (assignment) {
+      return Boolean(
+        assignment.isNewActor
+      );
+    }
+  );
+}
+
+
+function weeklyOSPutInSegmentUsesNewActorStyle_(
+  segment,
+  putIn
+) {
+  if (
+    segment
+      .isNewActorActivity
+  ) {
+    return true;
+  }
+
+  return weeklyOSPutInHasNewActors_(
+    putIn
+  );
+}
+
+
+/*************************************************
+ * ADD OR UPDATE NEW ACTOR
+ *
+ * Useful for the future popup editor.
+ *************************************************/
+
+function weeklyOSSetPutInNewActor_(
+  putIn,
+  role,
+  person
+) {
+  weeklyOSEnsurePutInModel_(
+    putIn
+  );
+
+  const roleKey =
+    weeklyOSNormalizePutInRoleKey_(
+      role
+    );
+
+  if (
+    !roleKey ||
+    !weeklyOSNormalizeText_(
+      person
+    )
+  ) {
+    throw new Error(
+      "WeeklyOS needs both a role and person to add a Put-In new actor."
+    );
+  }
+
+  const existing =
+    putIn.newActors.find(
+      function (item) {
+        return (
+          weeklyOSNormalizePutInRoleKey_(
+            item.role
+          ) ===
+          roleKey
+        );
+      }
+    );
+
+  if (existing) {
+    existing.person =
+      weeklyOSNormalizeText_(
+        person
+      );
+  } else {
+    putIn.newActors.push({
+      id:
+        weeklyOSUuid_(),
+
+      person:
+        weeklyOSNormalizeText_(
+          person
+        ),
+
+      role:
+        weeklyOSNormalizeText_(
+          role
+        ),
+
+      source:
+        "Manual",
+
+      sourceRow:
+        null
+    });
+  }
+
+  weeklyOSApplyPutInNewActorOverrides_(
+    putIn
+  );
+
+  weeklyOSMarkPutInAssignmentStyles_(
+    putIn
+  );
+
+  return putIn;
+}
+
+
+/*************************************************
+ * UPDATE ONE PUT-IN ASSIGNMENT
+ *************************************************/
+
+function weeklyOSUpdatePutInAssignment_(
+  putIn,
+  role,
+  person,
+  isNewActor
+) {
+  weeklyOSEnsurePutInModel_(
+    putIn
+  );
+
+  const roleKey =
+    weeklyOSNormalizePutInRoleKey_(
+      role
+    );
+
+  let assignment =
+    putIn.assignments.find(
+      function (item) {
+        return (
+          weeklyOSNormalizePutInRoleKey_(
+            item.role
+          ) ===
+          roleKey
+        );
+      }
+    );
+
+  if (!assignment) {
+    assignment = {
+      id:
+        weeklyOSUuid_(),
+
+      role:
+        weeklyOSNormalizeText_(
+          role
+        ),
+
+      person:
+        "",
+
+      defaultPerson:
+        "",
+
+      isNewActor:
+        false,
+
+      manuallyEdited:
+        true,
+
+      source:
+        "Manual",
+
+      sourceRow:
+        null
+    };
+
+    putIn.assignments.push(
+      assignment
+    );
+  }
+
+  assignment.person =
+    weeklyOSNormalizeText_(
+      person
+    );
+
+  assignment.isNewActor =
+    Boolean(
+      isNewActor
+    );
+
+  assignment.manuallyEdited =
+    true;
+
+  assignment.source =
+    "Manual";
+
+  weeklyOSMarkPutInAssignmentStyles_(
+    putIn
+  );
+
+  return assignment;
+}
+
+
+/*************************************************
+ * RESET ROLE TO MAIN CAST
+ *************************************************/
+
+function weeklyOSResetPutInAssignment_(
+  putIn,
+  role
+) {
+  weeklyOSEnsurePutInModel_(
+    putIn
+  );
+
+  const roleKey =
+    weeklyOSNormalizePutInRoleKey_(
+      role
+    );
+
+  const assignment =
+    putIn.assignments.find(
+      function (item) {
+        return (
+          weeklyOSNormalizePutInRoleKey_(
+            item.role
+          ) ===
+          roleKey
+        );
+      }
+    );
+
+  if (!assignment) {
+    return null;
+  }
+
+  assignment.person =
+    assignment.defaultPerson ||
+    assignment.person;
+
+  assignment.isNewActor =
+    false;
+
+  assignment.manuallyEdited =
+    false;
+
+  assignment.source =
+    "Cast List";
+
+  putIn.newActors =
+    (
+      putIn.newActors || []
+    ).filter(
+      function (newActor) {
+        return (
+          weeklyOSNormalizePutInRoleKey_(
+            newActor.role
+          ) !==
+          roleKey
+        );
+      }
+    );
+
+  weeklyOSMarkPutInAssignmentStyles_(
+    putIn
+  );
+
+  return assignment;
+}
