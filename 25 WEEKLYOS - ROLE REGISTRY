@@ -1,0 +1,1369 @@
+/*************************************************
+ * 25 WEEKLYOS - ROLE REGISTRY
+ * Version: 0.2.0
+ *
+ * PURPOSE
+ * A name-free role registry for WeeklyOS.
+ *
+ * This file defines:
+ * - which staff roles exist
+ * - which roles belong to which department/team
+ * - which roles can affect performance staffing
+ * - the structured rehearsal staffing model
+ *
+ * It does NOT:
+ * - hard-code any person's name
+ * - treat the Contact Sheet as a database
+ * - write to Weekly Schedule
+ * - assign a specific person to a role
+ *
+ * FUTURE COMPANYOS
+ * CompanyOS will eventually answer:
+ *   "Who currently occupies this role?"
+ *
+ * WeeklyOS will continue using the same role keys.
+ *************************************************/
+
+
+/*************************************************
+ * PUBLIC API
+ *************************************************/
+
+function WeeklyRoleOS() {
+  return {
+    version: "0.2.0",
+
+    getRegistry:
+      weeklyOSGetRoleRegistry_,
+
+    getRole:
+      weeklyOSGetRoleDefinition_,
+
+    getRolesByTeam:
+      weeklyOSGetRolesByTeam_,
+
+    getRehearsalStaffOptions:
+      weeklyOSGetRehearsalStaffOptions_,
+
+    normalizeRehearsal:
+      weeklyOSNormalizeRehearsalModel_,
+
+    buildStaffingImpact:
+      weeklyOSBuildRoleBasedStaffingImpact_,
+
+    buildOperationalNote:
+      weeklyOSBuildRoleBasedOperationalNote_
+  };
+}
+
+
+/*************************************************
+ * ROLE REGISTRY
+ *
+ * Add production roles here.
+ * Do not add people here.
+ *************************************************/
+
+function weeklyOSGetRoleRegistry_() {
+  return {
+    version: "0.2.0",
+
+    teams: {
+      STAGE_MANAGEMENT: {
+        key: "STAGE_MANAGEMENT",
+        label: "Stage Management",
+        sortOrder: 10
+      },
+
+      DIRECTION: {
+        key: "DIRECTION",
+        label: "Directing Team",
+        sortOrder: 20
+      },
+
+      CHOREOGRAPHY: {
+        key: "CHOREOGRAPHY",
+        label: "Choreography Team",
+        sortOrder: 30
+      },
+
+      MUSIC: {
+        key: "MUSIC",
+        label: "Music Team",
+        sortOrder: 40
+      },
+
+      PRODUCTION: {
+        key: "PRODUCTION",
+        label: "Production",
+        sortOrder: 50
+      },
+
+      CREW: {
+        key: "CREW",
+        label: "Crew",
+        sortOrder: 60
+      }
+    },
+
+    roles: {
+      PRODUCTION_STAGE_MANAGER: {
+        key: "PRODUCTION_STAGE_MANAGER",
+        label: "Production Stage Manager",
+        shortLabel: "PSM",
+        teamKey: "STAGE_MANAGEMENT",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "CALLING_PSM",
+        sortOrder: 10
+      },
+
+      ASSISTANT_STAGE_MANAGER: {
+        key: "ASSISTANT_STAGE_MANAGER",
+        label: "Assistant Stage Manager",
+        shortLabel: "ASM",
+        teamKey: "STAGE_MANAGEMENT",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "DECK_ASM",
+        sortOrder: 20
+      },
+
+      SECOND_ASSISTANT_STAGE_MANAGER: {
+        key: "SECOND_ASSISTANT_STAGE_MANAGER",
+        label: "Second Assistant Stage Manager",
+        shortLabel: "ASM 2",
+        teamKey: "STAGE_MANAGEMENT",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "DECK_ASM",
+        sortOrder: 30
+      },
+
+      SUB_STAGE_MANAGER: {
+        key: "SUB_STAGE_MANAGER",
+        label: "Sub Stage Manager",
+        shortLabel: "Sub SM",
+        teamKey: "STAGE_MANAGEMENT",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "COVER_STAGE_MANAGEMENT",
+        sortOrder: 40
+      },
+
+      PRODUCTION_ASSISTANT: {
+        key: "PRODUCTION_ASSISTANT",
+        label: "Production Assistant",
+        shortLabel: "PA",
+        teamKey: "STAGE_MANAGEMENT",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 50
+      },
+
+      DIRECTOR: {
+        key: "DIRECTOR",
+        label: "Director",
+        shortLabel: "Director",
+        teamKey: "DIRECTION",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 10
+      },
+
+      RESIDENT_DIRECTOR: {
+        key: "RESIDENT_DIRECTOR",
+        label: "Resident Director",
+        shortLabel: "Resident Director",
+        teamKey: "DIRECTION",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 20
+      },
+
+      ASSOCIATE_DIRECTOR: {
+        key: "ASSOCIATE_DIRECTOR",
+        label: "Associate Director",
+        shortLabel: "Associate Director",
+        teamKey: "DIRECTION",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 30
+      },
+
+      ASSISTANT_DIRECTOR: {
+        key: "ASSISTANT_DIRECTOR",
+        label: "Assistant Director",
+        shortLabel: "Assistant Director",
+        teamKey: "DIRECTION",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 40
+      },
+
+      CHOREOGRAPHER: {
+        key: "CHOREOGRAPHER",
+        label: "Choreographer",
+        shortLabel: "Choreographer",
+        teamKey: "CHOREOGRAPHY",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 10
+      },
+
+      ASSOCIATE_CHOREOGRAPHER: {
+        key: "ASSOCIATE_CHOREOGRAPHER",
+        label: "Associate Choreographer",
+        shortLabel: "Associate Choreographer",
+        teamKey: "CHOREOGRAPHY",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 20
+      },
+
+      ASSISTANT_CHOREOGRAPHER: {
+        key: "ASSISTANT_CHOREOGRAPHER",
+        label: "Assistant Choreographer",
+        shortLabel: "Assistant Choreographer",
+        teamKey: "CHOREOGRAPHY",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 30
+      },
+
+      DANCE_CAPTAIN: {
+        key: "DANCE_CAPTAIN",
+        label: "Dance Captain",
+        shortLabel: "Dance Captain",
+        teamKey: "CHOREOGRAPHY",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 40
+      },
+
+      ASSISTANT_DANCE_CAPTAIN: {
+        key: "ASSISTANT_DANCE_CAPTAIN",
+        label: "Assistant Dance Captain",
+        shortLabel: "Assistant Dance Captain",
+        teamKey: "CHOREOGRAPHY",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 50
+      },
+
+      MUSIC_SUPERVISOR: {
+        key: "MUSIC_SUPERVISOR",
+        label: "Music Supervisor",
+        shortLabel: "Music Supervisor",
+        teamKey: "MUSIC",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 10
+      },
+
+      MUSIC_DIRECTOR: {
+        key: "MUSIC_DIRECTOR",
+        label: "Music Director",
+        shortLabel: "Music Director",
+        teamKey: "MUSIC",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 20
+      },
+
+      ASSOCIATE_MUSIC_DIRECTOR: {
+        key: "ASSOCIATE_MUSIC_DIRECTOR",
+        label: "Associate Music Director",
+        shortLabel: "Associate Music Director",
+        teamKey: "MUSIC",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 30
+      },
+
+      CONDUCTOR: {
+        key: "CONDUCTOR",
+        label: "Conductor",
+        shortLabel: "Conductor",
+        teamKey: "MUSIC",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 40
+      },
+
+      REHEARSAL_PIANIST: {
+        key: "REHEARSAL_PIANIST",
+        label: "Rehearsal Pianist",
+        shortLabel: "Rehearsal Pianist",
+        teamKey: "MUSIC",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 50
+      },
+
+      COMPANY_MANAGER: {
+        key: "COMPANY_MANAGER",
+        label: "Company Manager",
+        shortLabel: "Company Manager",
+        teamKey: "PRODUCTION",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 10
+      },
+
+      GENERAL_MANAGER: {
+        key: "GENERAL_MANAGER",
+        label: "General Manager",
+        shortLabel: "General Manager",
+        teamKey: "PRODUCTION",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 20
+      },
+
+      PRODUCTION_MANAGER: {
+        key: "PRODUCTION_MANAGER",
+        label: "Production Manager",
+        shortLabel: "Production Manager",
+        teamKey: "PRODUCTION",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 30
+      },
+
+      TECHNICAL_DIRECTOR: {
+        key: "TECHNICAL_DIRECTOR",
+        label: "Technical Director",
+        shortLabel: "Technical Director",
+        teamKey: "PRODUCTION",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 40
+      },
+
+      PROPS: {
+        key: "PROPS",
+        label: "Props",
+        shortLabel: "Props",
+        teamKey: "CREW",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 10
+      },
+
+      WARDROBE: {
+        key: "WARDROBE",
+        label: "Wardrobe",
+        shortLabel: "Wardrobe",
+        teamKey: "CREW",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 20
+      },
+
+      HAIR_AND_MAKEUP: {
+        key: "HAIR_AND_MAKEUP",
+        label: "Hair & Makeup",
+        shortLabel: "Hair & Makeup",
+        teamKey: "CREW",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 30
+      },
+
+      AUDIO: {
+        key: "AUDIO",
+        label: "Audio",
+        shortLabel: "Audio",
+        teamKey: "CREW",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 40
+      },
+
+      LIGHTING: {
+        key: "LIGHTING",
+        label: "Lighting",
+        shortLabel: "Lighting",
+        teamKey: "CREW",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 50
+      },
+
+      CARPENTRY: {
+        key: "CARPENTRY",
+        label: "Carpentry",
+        shortLabel: "Carpentry",
+        teamKey: "CREW",
+        category: "STAFF",
+        rehearsalEligible: true,
+        performanceStaffingRole: "",
+        sortOrder: 60
+      }
+    }
+  };
+}
+
+
+/*************************************************
+ * ROLE LOOKUPS
+ *************************************************/
+
+function weeklyOSGetRoleDefinition_(roleKey) {
+  const registry =
+    weeklyOSGetRoleRegistry_();
+
+  const key =
+    weeklyOSNormalizeRoleKey_(roleKey);
+
+  return registry.roles[key] || null;
+}
+
+
+function weeklyOSGetRolesByTeam_(teamKey) {
+  const registry =
+    weeklyOSGetRoleRegistry_();
+
+  const wantedTeam =
+    weeklyOSNormalizeRoleKey_(teamKey);
+
+  return Object.keys(registry.roles)
+    .map(function (key) {
+      return registry.roles[key];
+    })
+    .filter(function (role) {
+      return (
+        role.teamKey === wantedTeam
+      );
+    })
+    .sort(function (a, b) {
+      return (
+        Number(a.sortOrder || 0) -
+        Number(b.sortOrder || 0)
+      );
+    });
+}
+
+
+function weeklyOSGetRehearsalStaffOptions_() {
+  const registry =
+    weeklyOSGetRoleRegistry_();
+
+  const teams =
+    Object.keys(registry.teams)
+      .map(function (key) {
+        return registry.teams[key];
+      })
+      .sort(function (a, b) {
+        return (
+          Number(a.sortOrder || 0) -
+          Number(b.sortOrder || 0)
+        );
+      });
+
+  return teams.map(function (team) {
+    return {
+      key: team.key,
+      label: team.label,
+
+      roles:
+        weeklyOSGetRolesByTeam_(
+          team.key
+        )
+          .filter(function (role) {
+            return role.rehearsalEligible;
+          })
+          .map(function (role) {
+            return {
+              key: role.key,
+              label: role.label,
+              shortLabel:
+                role.shortLabel
+            };
+          })
+    };
+  });
+}
+
+
+/*************************************************
+ * STRUCTURED REHEARSAL MODEL
+ *************************************************/
+
+function weeklyOSNormalizeRehearsalModel_(
+  rehearsal
+) {
+  const source =
+    rehearsal || {};
+
+  const normalized = {
+    id:
+      source.id || "",
+
+    type:
+      weeklyOSCleanRoleText_(
+        source.type ||
+        source.rehearsalType
+      ),
+
+    title:
+      weeklyOSCleanRoleText_(
+        source.title ||
+        source.name
+      ),
+
+    startTime:
+      weeklyOSCleanRoleText_(
+        source.startTime ||
+        source.start
+      ),
+
+    endTime:
+      weeklyOSCleanRoleText_(
+        source.endTime ||
+        source.end
+      ),
+
+    location: {
+      venue:
+        weeklyOSCleanRoleText_(
+          source.location &&
+          typeof source.location ===
+            "object"
+            ? source.location.venue
+            : source.location
+        ),
+
+      address1:
+        weeklyOSCleanRoleText_(
+          source.location &&
+          typeof source.location ===
+            "object"
+            ? source.location.address1
+            : source.address1
+        ),
+
+      address2:
+        weeklyOSCleanRoleText_(
+          source.location &&
+          typeof source.location ===
+            "object"
+            ? source.location.address2
+            : source.address2
+        )
+    },
+
+    staffCalled:
+      weeklyOSNormalizeStaffAssignments_(
+        source.staffCalled || []
+      ),
+
+    actorsCalled:
+      weeklyOSUniqueRoleTextList_(
+        source.actorsCalled ||
+        source.actorCall ||
+        []
+      ),
+
+    notes:
+      weeklyOSUniqueRoleTextList_(
+        source.notes || []
+      ),
+
+    performanceStaffing:
+      weeklyOSNormalizePerformanceStaffing_(
+        source.performanceStaffing
+      )
+  };
+
+  return normalized;
+}
+
+
+function weeklyOSNormalizeStaffAssignments_(
+  assignments
+) {
+  return (assignments || [])
+    .map(function (assignment) {
+      if (
+        typeof assignment ===
+        "string"
+      ) {
+        return {
+          roleKey:
+            weeklyOSNormalizeRoleKey_(
+              assignment
+            ),
+
+          personId: "",
+          personName: "",
+          displayLabel:
+            weeklyOSCleanRoleText_(
+              assignment
+            )
+        };
+      }
+
+      const roleKey =
+        weeklyOSNormalizeRoleKey_(
+          assignment.roleKey ||
+          assignment.role ||
+          assignment.title
+        );
+
+      const role =
+        weeklyOSGetRoleDefinition_(
+          roleKey
+        );
+
+      return {
+        roleKey: roleKey,
+
+        /*
+         * These are intentionally optional.
+         * CompanyOS will fill them later.
+         */
+        personId:
+          weeklyOSCleanRoleText_(
+            assignment.personId
+          ),
+
+        personName:
+          weeklyOSCleanRoleText_(
+            assignment.personName ||
+            assignment.name
+          ),
+
+        displayLabel:
+          weeklyOSCleanRoleText_(
+            assignment.displayLabel
+          ) ||
+          (
+            role
+              ? role.label
+              : weeklyOSCleanRoleText_(
+                  assignment.role ||
+                  assignment.title
+                )
+          )
+      };
+    })
+    .filter(function (assignment) {
+      return Boolean(
+        assignment.roleKey ||
+        assignment.personName ||
+        assignment.displayLabel
+      );
+    });
+}
+
+
+function weeklyOSNormalizePerformanceStaffing_(
+  staffing
+) {
+  const source =
+    staffing || {};
+
+  return {
+    applies:
+      Boolean(source.applies),
+
+    reason:
+      weeklyOSCleanRoleText_(
+        source.reason
+      ),
+
+    affectedPerformanceIds:
+      weeklyOSUniqueRoleTextList_(
+        source.affectedPerformanceIds ||
+        []
+      ),
+
+    performanceScope:
+      weeklyOSCleanRoleText_(
+        source.performanceScope
+      ),
+
+    unavailableRoleKeys:
+      weeklyOSUniqueRoleKeyList_(
+        source.unavailableRoleKeys ||
+        []
+      ),
+
+    assignments:
+      weeklyOSNormalizeStaffAssignments_(
+        source.assignments || []
+      ),
+
+    requiresReview:
+      Boolean(
+        source.requiresReview
+      ),
+
+    generatedNote:
+      weeklyOSCleanRoleText_(
+        source.generatedNote
+      ),
+
+    note:
+      weeklyOSCleanRoleText_(
+        source.note
+      )
+  };
+}
+
+
+/*************************************************
+ * ROLE-BASED PERFORMANCE STAFFING
+ *
+ * This determines the required role movement.
+ * It does not guess which person fills the role.
+ *************************************************/
+
+function weeklyOSBuildRoleBasedStaffingImpact_(
+  rehearsal,
+  day
+) {
+  const normalized =
+    weeklyOSNormalizeRehearsalModel_(
+      rehearsal
+    );
+
+  const performances =
+    day &&
+    Array.isArray(
+      day.performances
+    )
+      ? day.performances
+      : [];
+
+  const psmCalled =
+    weeklyOSHasStaffRole_(
+      normalized.staffCalled,
+      "PRODUCTION_STAGE_MANAGER"
+    );
+
+  const affected =
+    psmCalled &&
+    performances.length > 0;
+
+  const existing =
+    normalized.performanceStaffing;
+
+  const assignments =
+    weeklyOSMergeStaffingAssignments_(
+      existing.assignments,
+      affected
+        ? [
+            {
+              roleKey:
+                "CALLING_PSM",
+
+              sourceRoleKey:
+                "ASSISTANT_STAGE_MANAGER",
+
+              personId: "",
+              personName: "",
+              displayLabel:
+                "Current ASM becomes Calling PSM"
+            },
+
+            {
+              roleKey:
+                "DECK_ASM",
+
+              sourceRoleKey:
+                "SUB_STAGE_MANAGER",
+
+              personId: "",
+              personName: "",
+              displayLabel:
+                "ASM coverage required"
+            }
+          ]
+        : []
+    );
+
+  const impact = {
+    applies:
+      affected,
+
+    reason:
+      affected
+        ? "PRODUCTION_STAGE_MANAGER_CALLED_TO_REHEARSAL_ON_PERFORMANCE_DAY"
+        : "",
+
+    affectedPerformanceIds:
+      performances.map(function (
+        performance
+      ) {
+        return weeklyOSCleanRoleText_(
+          performance.id ||
+          performance.performanceNumber ||
+          performance.label ||
+          performance.time
+        );
+      }).filter(Boolean),
+
+    performanceScope:
+      weeklyOSGetPerformanceScope_(
+        performances
+      ),
+
+    unavailableRoleKeys:
+      affected
+        ? [
+            "PRODUCTION_STAGE_MANAGER"
+          ]
+        : [],
+
+    assignments:
+      assignments,
+
+    requiresReview:
+      affected &&
+      assignments.some(function (
+        assignment
+      ) {
+        return (
+          !assignment.personId &&
+          !assignment.personName
+        );
+      }),
+
+    generatedNote:
+      "",
+
+    note:
+      existing.note || ""
+  };
+
+  impact.generatedNote =
+    weeklyOSBuildRoleBasedOperationalNote_(
+      impact
+    );
+
+  if (!impact.note) {
+    impact.note =
+      impact.generatedNote;
+  }
+
+  return impact;
+}
+
+
+/*************************************************
+ * OPERATIONAL NOTE
+ *
+ * Uses assigned person names when available.
+ * Otherwise uses role labels/TBD.
+ *************************************************/
+
+function weeklyOSBuildRoleBasedOperationalNote_(
+  impact
+) {
+  if (
+    !impact ||
+    !impact.applies
+  ) {
+    return "";
+  }
+
+  const psmUnavailable =
+    weeklyOSFindAssignmentForRole_(
+      impact.assignments,
+      "UNAVAILABLE_PSM"
+    );
+
+  const callingPsm =
+    weeklyOSFindAssignmentForRole_(
+      impact.assignments,
+      "CALLING_PSM"
+    );
+
+  const deckAsm =
+    weeklyOSFindAssignmentForRole_(
+      impact.assignments,
+      "DECK_ASM"
+    );
+
+  const unavailableLabel =
+    weeklyOSAssignmentPersonLabel_(
+      psmUnavailable
+    ) ||
+    "PSM";
+
+  const callingLabel =
+    weeklyOSAssignmentPersonLabel_(
+      callingPsm
+    ) ||
+    "Current ASM";
+
+  const deckLabel =
+    weeklyOSAssignmentPersonLabel_(
+      deckAsm
+    ) ||
+    "TBD";
+
+  const scope =
+    weeklyOSCleanRoleText_(
+      impact.performanceScope
+    );
+
+  return (
+    "- " +
+    unavailableLabel +
+    " at Rehearsal. " +
+    callingLabel +
+    " = PSM, " +
+    deckLabel +
+    " IN as ASM" +
+    (
+      scope
+        ? " (" + scope + ")"
+        : ""
+    )
+  );
+}
+
+
+/*************************************************
+ * ASSIGNMENT HELPERS
+ *************************************************/
+
+function weeklyOSHasStaffRole_(
+  staffCalled,
+  roleKey
+) {
+  const wanted =
+    weeklyOSNormalizeRoleKey_(
+      roleKey
+    );
+
+  return (staffCalled || [])
+    .some(function (assignment) {
+      return (
+        weeklyOSNormalizeRoleKey_(
+          assignment.roleKey
+        ) === wanted
+      );
+    });
+}
+
+
+function weeklyOSMergeStaffingAssignments_(
+  existing,
+  defaults
+) {
+  const result = [];
+  const seen = {};
+
+  []
+    .concat(existing || [])
+    .concat(defaults || [])
+    .forEach(function (assignment) {
+      const normalized = {
+        roleKey:
+          weeklyOSNormalizeRoleKey_(
+            assignment.roleKey
+          ),
+
+        sourceRoleKey:
+          weeklyOSNormalizeRoleKey_(
+            assignment.sourceRoleKey
+          ),
+
+        personId:
+          weeklyOSCleanRoleText_(
+            assignment.personId
+          ),
+
+        personName:
+          weeklyOSCleanRoleText_(
+            assignment.personName
+          ),
+
+        displayLabel:
+          weeklyOSCleanRoleText_(
+            assignment.displayLabel
+          )
+      };
+
+      const key =
+        normalized.roleKey ||
+        normalized.displayLabel;
+
+      if (!key) {
+        return;
+      }
+
+      if (!seen[key]) {
+        seen[key] =
+          normalized;
+
+        result.push(
+          normalized
+        );
+
+        return;
+      }
+
+      /*
+       * A manual assignment wins over a generated default.
+       */
+      if (
+        normalized.personId ||
+        normalized.personName
+      ) {
+        Object.assign(
+          seen[key],
+          normalized
+        );
+      }
+    });
+
+  return result;
+}
+
+
+function weeklyOSFindAssignmentForRole_(
+  assignments,
+  roleKey
+) {
+  const wanted =
+    weeklyOSNormalizeRoleKey_(
+      roleKey
+    );
+
+  return (assignments || [])
+    .find(function (assignment) {
+      return (
+        weeklyOSNormalizeRoleKey_(
+          assignment.roleKey
+        ) === wanted
+      );
+    }) || null;
+}
+
+
+function weeklyOSAssignmentPersonLabel_(
+  assignment
+) {
+  if (!assignment) {
+    return "";
+  }
+
+  return weeklyOSCleanRoleText_(
+    assignment.personName ||
+    assignment.displayLabel
+  );
+}
+
+
+/*************************************************
+ * PERFORMANCE SCOPE
+ *************************************************/
+
+function weeklyOSGetPerformanceScope_(
+  performances
+) {
+  const labels =
+    (performances || [])
+      .map(function (performance) {
+        const text =
+          weeklyOSCleanRoleText_(
+            [
+              performance.showType,
+              performance.label,
+              performance.time
+            ]
+              .filter(Boolean)
+              .join(" ")
+          ).toUpperCase();
+
+        if (
+          /\bMAT\b|\bMATINEE\b/.test(
+            text
+          )
+        ) {
+          return "Mat";
+        }
+
+        if (
+          /\bEVE\b|\bEVENING\b/.test(
+            text
+          )
+        ) {
+          return "Eve";
+        }
+
+        return "";
+      })
+      .filter(Boolean);
+
+  const unique =
+    weeklyOSUniqueRoleTextList_(
+      labels
+    );
+
+  if (
+    unique.indexOf("Mat") !== -1 &&
+    unique.indexOf("Eve") !== -1
+  ) {
+    return "Mat & Eve";
+  }
+
+  if (unique.length === 1) {
+    return unique[0];
+  }
+
+  if (
+    performances &&
+    performances.length === 1
+  ) {
+    return "Performance";
+  }
+
+  if (
+    performances &&
+    performances.length > 1
+  ) {
+    return "Performances";
+  }
+
+  return "";
+}
+
+
+/*************************************************
+ * TEXT HELPERS
+ *************************************************/
+
+function weeklyOSNormalizeRoleKey_(
+  value
+) {
+  return String(
+    value == null
+      ? ""
+      : value
+  )
+    .trim()
+    .toUpperCase()
+    .replace(
+      /[^A-Z0-9]+/g,
+      "_"
+    )
+    .replace(
+      /^_+|_+$/g,
+      ""
+    );
+}
+
+
+function weeklyOSUniqueRoleKeyList_(
+  values
+) {
+  const output = [];
+  const seen = {};
+
+  (values || [])
+    .forEach(function (value) {
+      const key =
+        weeklyOSNormalizeRoleKey_(
+          value
+        );
+
+      if (
+        key &&
+        !seen[key]
+      ) {
+        seen[key] = true;
+        output.push(key);
+      }
+    });
+
+  return output;
+}
+
+
+function weeklyOSUniqueRoleTextList_(
+  values
+) {
+  const output = [];
+  const seen = {};
+
+  (values || [])
+    .forEach(function (value) {
+      const text =
+        weeklyOSCleanRoleText_(
+          value
+        );
+
+      const key =
+        text.toUpperCase();
+
+      if (
+        text &&
+        !seen[key]
+      ) {
+        seen[key] = true;
+        output.push(text);
+      }
+    });
+
+  return output;
+}
+
+
+function weeklyOSCleanRoleText_(
+  value
+) {
+  return String(
+    value == null
+      ? ""
+      : value
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+
+/*************************************************
+ * SAFE TESTS — NO SHEET WRITES
+ *************************************************/
+
+function testWeeklyRoleOS_SAFE() {
+  const options =
+    weeklyOSGetRehearsalStaffOptions_();
+
+  const sampleRehearsal =
+    weeklyOSNormalizeRehearsalModel_({
+      type:
+        "Offsite Rehearsal",
+
+      title:
+        "Understudy Rehearsal",
+
+      startTime:
+        "12:00 PM",
+
+      endTime:
+        "6:00 PM",
+
+      location: {
+        venue:
+          "Sunlight Studios",
+
+        address1:
+          "321 West 33rd St",
+
+        address2:
+          "Suite 202 Studio D"
+      },
+
+      staffCalled: [
+        {
+          roleKey:
+            "PRODUCTION_STAGE_MANAGER"
+        },
+
+        {
+          roleKey:
+            "RESIDENT_DIRECTOR"
+        },
+
+        {
+          roleKey:
+            "REHEARSAL_PIANIST"
+        }
+      ],
+
+      actorsCalled: [
+        "Actor A",
+        "Actor B"
+      ]
+    });
+
+  sampleRehearsal.performanceStaffing =
+    weeklyOSBuildRoleBasedStaffingImpact_(
+      sampleRehearsal,
+      {
+        performances: [
+          {
+            id: "MAT",
+            showType: "Mat"
+          },
+
+          {
+            id: "EVE",
+            showType: "Eve"
+          }
+        ]
+      }
+    );
+
+  const result = {
+    staffOptions:
+      options,
+
+    sampleRehearsal:
+      sampleRehearsal
+  };
+
+  Logger.log(
+    "WEEKLY ROLE OS SAFE TEST"
+  );
+
+  Logger.log(
+    JSON.stringify(
+      result,
+      null,
+      2
+    )
+  );
+
+  SpreadsheetApp
+    .getUi()
+    .alert(
+      [
+        "Weekly RoleOS test complete.",
+        "",
+        "No sheets were changed.",
+        "",
+        "The execution log should show:",
+        "• grouped staff role options",
+        "• location fields",
+        "• staffCalled",
+        "• actorsCalled",
+        "• role-based performanceStaffing",
+        "• a generated TBD coverage note"
+      ].join("\n")
+    );
+
+  return result;
+}
