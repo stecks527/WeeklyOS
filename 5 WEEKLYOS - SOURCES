@@ -1,0 +1,3653 @@
+/*************************************************
+ * 25 WEEKLYOS - SOURCES
+ * Version: 0.3.0
+ * Status: ACTIVE DEVELOPMENT
+ *
+ * Builds the initial WeekModel from:
+ *
+ * - Expanded Calendar
+ * - Production Cal w/Conflicts
+ * - PD/Vacation Tracker
+ * - Crew Outs
+ * - Contact Sheet
+ *
+ * Source philosophy:
+ *
+ * Expanded Calendar
+ *   = schedule backbone
+ *
+ * Production Cal w/Conflicts
+ *   = cast outs + company activity
+ *
+ * PD/Vacation Tracker
+ *   = cast-out enrichment / approval validation
+ *
+ * Crew Outs
+ *   = crew-out source + coverage
+ *
+ * Contact Sheet
+ *   = people / role / department reference
+ *************************************************/
+
+
+/*************************************************
+ * BUILD NEW DRAFT
+ *************************************************/
+
+function weeklyOSBuildDraft(weekStart) {
+  const draft =
+    weeklyOSCreateWeekDraft_(
+      weekStart ||
+      weeklyOSNextMonday_()
+    );
+
+  weeklyOSLog_(
+    "Building weekly draft.",
+    {
+      weekStart:
+        draft.weekStart,
+
+      weekEnd:
+        draft.weekEnd
+    }
+  );
+
+  const peopleIndex =
+    weeklyOSReadContactSheet_(
+      draft
+    );
+
+  weeklyOSReadExpandedCalendar_(
+    draft
+  );
+
+  /*
+  * Read dedicated rehearsal calendars such as:
+  * New Olive + Rona
+  */
+  // weeklyOSReadNewActorCalendars_(
+  //   draft
+  // );
+
+  weeklyOSReadProductionCalendar_(
+    draft,
+    peopleIndex
+  );
+
+  weeklyOSReadPdVacationTracker_(
+    draft,
+    peopleIndex
+  );
+
+  weeklyOSReadCrewOuts_(
+    draft,
+    peopleIndex
+  );
+
+  weeklyOSEnrichOutsFromPeopleIndex_(
+    draft,
+    peopleIndex
+  );
+
+  weeklyOSDeduplicateDraftSources_(
+    draft
+  );
+
+  draft.metadata.lastSourceRefreshAt =
+    weeklyOSNowIso_();
+
+  weeklyOSRecalculateDraft_(
+    draft
+  );
+
+  weeklyOSSaveDraft(
+    draft
+  );
+
+  weeklyOSLog_(
+    "Weekly draft built.",
+    weeklyOSBuildDraftSummary_(
+      draft
+    )
+  );
+
+  return draft;
+}
+
+
+/*************************************************
+ * REFRESH EXISTING DRAFT
+ *
+ * Rebuilds source data but preserves:
+ *
+ * - Manual rehearsals
+ * - Manual meetings
+ * - Manual work calls
+ * - Manual put-ins
+ * - Manual notes
+ * - Coverage choices
+ * - Review status
+ *************************************************/
+
+function weeklyOSRefreshDraft() {
+  const currentDraft =
+    weeklyOSGetDraft();
+
+  if (!currentDraft) {
+    return weeklyOSBuildDraft(
+      weeklyOSNextMonday_()
+    );
+  }
+
+  const refreshedDraft =
+    weeklyOSCreateWeekDraft_(
+      currentDraft.weekStart
+    );
+
+  const peopleIndex =
+    weeklyOSReadContactSheet_(
+      refreshedDraft
+    );
+
+  weeklyOSReadExpandedCalendar_(
+    refreshedDraft
+  );
+
+  /*
+  * Refresh dedicated new-actor rehearsal calendars.
+  */
+  // weeklyOSReadNewActorCalendars_(
+  //   refreshedDraft
+  // );
+
+  weeklyOSReadProductionCalendar_(
+    refreshedDraft,
+    peopleIndex
+  );
+
+  weeklyOSReadPdVacationTracker_(
+    refreshedDraft,
+    peopleIndex
+  );
+
+  weeklyOSReadCrewOuts_(
+    refreshedDraft,
+    peopleIndex
+  );
+
+  weeklyOSEnrichOutsFromPeopleIndex_(
+    refreshedDraft,
+    peopleIndex
+  );
+
+  weeklyOSMergeManualDraftEdits_(
+    refreshedDraft,
+    currentDraft
+  );
+
+  weeklyOSDeduplicateDraftSources_(
+    refreshedDraft
+  );
+
+  refreshedDraft.id =
+    currentDraft.id;
+
+  refreshedDraft.revision =
+    Number(
+      currentDraft.revision || 1
+    ) + 1;
+
+  refreshedDraft.createdAt =
+    currentDraft.createdAt;
+
+  refreshedDraft.metadata =
+    Object.assign(
+      {},
+      currentDraft.metadata || {},
+      {
+        lastSourceRefreshAt:
+          weeklyOSNowIso_()
+      }
+    );
+
+  weeklyOSRecalculateDraft_(
+    refreshedDraft
+  );
+
+  weeklyOSSaveDraft(
+    refreshedDraft
+  );
+
+  return refreshedDraft;
+}
+
+
+/*************************************************
+ * EXPANDED CALENDAR
+ *
+ * Confirmed layout:
+ *
+ * A = DATE
+ * B = WHAT
+ * C = TIME
+ * D = PLANNED GUEST SPELLERS
+ * E = SM CONFIRMED
+ * F = CONDUCTOR
+ * G = PT
+ *************************************************/
+
+function weeklyOSReadExpandedCalendar_(
+  draft
+) {
+  const config =
+    weeklyOSGetConfig_();
+
+  const status =
+    draft.sourceStatus
+      .expandedCalendar;
+
+  status.checkedAt =
+    weeklyOSNowIso_();
+
+  const sheet =
+    weeklyOSGetSheetSafe_(
+      config.sheets
+        .expandedCalendar
+    );
+
+  if (!sheet) {
+    status.status =
+      "NOT_FOUND";
+
+    status.details =
+      'Sheet "' +
+      config.sheets
+        .expandedCalendar +
+      '" was not found.';
+
+    return;
+  }
+
+  status.found = true;
+  status.status = "FOUND";
+
+  const lastRow =
+    sheet.getLastRow();
+
+  if (lastRow < 2) {
+    status.details =
+      "Expanded Calendar contains no schedule rows.";
+
+    return;
+  }
+
+  const rawValues =
+    sheet
+      .getRange(
+        2,
+        1,
+        lastRow - 1,
+        7
+      )
+      .getValues();
+
+  const displayValues =
+    sheet
+      .getRange(
+        2,
+        1,
+        lastRow - 1,
+        7
+      )
+      .getDisplayValues();
+
+  let currentDate = null;
+  let currentDateKey = "";
+  let currentConductor = "";
+
+  let performanceCount = 0;
+  let rehearsalCount = 0;
+  let workCallCount = 0;
+  let putInCount = 0;
+  let dayOffCount = 0;
+  let ptCount = 0;
+
+  for (
+    let index = 0;
+    index < rawValues.length;
+    index++
+  ) {
+    const rowNumber =
+      index + 2;
+
+    const rawRow =
+      rawValues[index];
+
+    const displayRow =
+      displayValues[index];
+
+    const dateValue =
+      rawRow[0] ||
+      displayRow[0];
+
+    const parsedDate =
+  weeklyOSAsDate_(
+    dateValue
+  );
+
+if (parsedDate) {
+  const nextDate =
+    weeklyOSStartOfDay_(
+      parsedDate
+    );
+
+  const nextDateKey =
+    weeklyOSDateKey_(
+      nextDate
+    );
+
+  /*
+   * Reset carried values whenever a new calendar
+   * date begins.
+   */
+  if (
+    nextDateKey &&
+    nextDateKey !== currentDateKey
+  ) {
+    currentConductor = "";
+  }
+
+  currentDate =
+    nextDate;
+
+  currentDateKey =
+    nextDateKey;
+}    
+
+    if (!currentDate) {
+      continue;
+    }
+
+    if (
+      !weeklyOSDateIsWithinRange_(
+        currentDate,
+        draft.weekStart,
+        draft.weekEnd
+      )
+    ) {
+      continue;
+    }
+
+    const day =
+      weeklyOSGetDay_(
+        draft,
+        currentDate
+      );
+
+    if (!day) {
+      continue;
+    }
+
+    const what =
+      weeklyOSNormalizeText_(
+        displayRow[1]
+      );
+
+    const time =
+      weeklyOSNormalizeText_(
+        displayRow[2]
+      );
+
+    const guestSpeller =
+      weeklyOSNormalizeText_(
+        displayRow[3]
+      );
+
+    const smConfirmed =
+      Boolean(
+        rawRow[4]
+      );
+
+    const rowConductor =
+  weeklyOSNormalizeText_(
+    displayRow[5]
+  );
+
+/*
+ * Expanded Calendar may use one conductor cell for
+ * an entire date or a merged two-performance block.
+ *
+ * A nonblank row value becomes the current conductor.
+ * Blank performance rows inherit that value.
+ *
+ * If the Evening performance has a different named
+ * conductor, its row value replaces the Matinee value.
+ */
+if (rowConductor) {
+  currentConductor =
+    rowConductor;
+}
+
+const conductor =
+  rowConductor ||
+  currentConductor ||
+  "";
+
+    const pt =
+      weeklyOSNormalizeText_(
+        displayRow[6]
+      );
+
+    if (
+      what ||
+      time ||
+      guestSpeller ||
+      conductor ||
+      pt
+    ) {
+      day.sources
+        .expandedCalendar = true;
+    }
+
+    if (pt) {
+      const ptTimes =
+        weeklyOSParseTimeRange_(
+          pt
+        );
+
+      day.pt.push(
+        weeklyOSCreatePt_({
+          startTime:
+            ptTimes.startTime,
+
+          endTime:
+            ptTimes.endTime,
+
+          location:
+            ptTimes.location ||
+            "Balcony",
+
+          notes:
+            pt,
+
+          source:
+            "Expanded Calendar",
+
+          sourceRow:
+            rowNumber
+        })
+      );
+
+      ptCount++;
+    }
+
+    if (!what) {
+      continue;
+    }
+
+    const upperWhat =
+      weeklyOSUpper_(
+        what
+      );
+
+    if (
+      upperWhat.indexOf(
+        "PERFORMANCE"
+      ) >= 0
+    ) {
+      const performanceNumber =
+        weeklyOSExtractPerformanceNumber_(
+          what
+        );
+
+      const showType =
+        weeklyOSDetermineShowType_(
+          time,
+          what
+        );
+
+      day.performances.push(
+        weeklyOSCreatePerformance_({
+          performanceNumber:
+            performanceNumber,
+
+          label:
+            what,
+
+          time:
+            time,
+
+          showType:
+            showType,
+
+          conductor:
+            conductor,
+
+          guestSpeller:
+            guestSpeller,
+
+          smConfirmed:
+            smConfirmed,
+
+          source:
+            "Expanded Calendar",
+
+          sourceRow:
+            rowNumber
+        })
+      );
+
+      performanceCount++;
+      continue;
+    }
+
+    if (
+      upperWhat.indexOf(
+        "AEA DAY OFF"
+      ) >= 0
+    ) {
+      day.dayOff =
+        weeklyOSCreateDayOff_({
+          type:
+            "AEA_DAY_OFF",
+
+          title:
+            "AEA DAY OFF",
+
+          source:
+            "Expanded Calendar",
+
+          sourceRow:
+            rowNumber
+        });
+
+      dayOffCount++;
+      continue;
+    }
+
+    if (
+      upperWhat.indexOf(
+        "PUT-IN"
+      ) >= 0 ||
+      upperWhat.indexOf(
+        "PUT IN"
+      ) >= 0
+    ) {
+      const putInTimes =
+        weeklyOSParseTimeRange_(
+          time
+        );
+
+      day.putIns.push(
+        weeklyOSCreatePutIn_({
+          title:
+            what,
+
+          startTime:
+            putInTimes.startTime,
+
+          endTime:
+            putInTimes.endTime,
+
+          location:
+            "",
+
+          requiresReview:
+            true,
+
+          source:
+            "Expanded Calendar",
+
+          sourceRow:
+            rowNumber
+        })
+      );
+
+      putInCount++;
+      continue;
+    }
+
+    if (
+      upperWhat.indexOf(
+        "WORK CALL"
+      ) >= 0
+    ) {
+      const workCallTimes =
+        weeklyOSParseTimeRange_(
+          time
+        );
+
+      day.workCalls.push(
+        weeklyOSCreateWorkCall_({
+          title:
+            what,
+
+          startTime:
+            workCallTimes.startTime,
+
+          endTime:
+            workCallTimes.endTime,
+
+          source:
+            "Expanded Calendar",
+
+          sourceRow:
+            rowNumber
+        })
+      );
+
+      workCallCount++;
+      continue;
+    }
+
+    if (
+      upperWhat.indexOf(
+        "REH"
+      ) >= 0 ||
+      upperWhat.indexOf(
+        "REHEARSAL"
+      ) >= 0
+    ) {
+      const rehearsalTimes =
+        weeklyOSParseTimeRange_(
+          time
+        );
+
+      const rehearsalType =
+        weeklyOSDetermineRehearsalType_(
+          what
+        );
+
+      const isUnderstudy =
+        rehearsalType ===
+        "UNDERSTUDY";
+
+      const isNewHire =
+        rehearsalType ===
+        "NEW_HIRE";
+
+      const defaults =
+        isUnderstudy
+          ? config
+              .rehearsalDefaults
+              .understudy
+          : isNewHire
+            ? config
+                .rehearsalDefaults
+                .newHire
+            : {};
+
+      day.rehearsals.push(
+        weeklyOSCreateRehearsal_({
+          type:
+            rehearsalType,
+
+          title:
+            what,
+
+          startTime:
+            rehearsalTimes
+              .startTime,
+
+          endTime:
+            rehearsalTimes
+              .endTime,
+
+          location:
+            defaults.location ||
+            "",
+
+          called:
+            defaults.called ||
+            [],
+
+          goldDividerBeforePerformance:
+            Boolean(
+              defaults
+                .goldDividerBeforePerformance
+            ),
+
+          notes:
+            upperWhat.indexOf(
+              "TBD"
+            ) >= 0
+              ? "Potential rehearsal detected. Confirm details or mark canceled."
+              : "",
+
+          requiresReview:
+            (
+              upperWhat.indexOf(
+                "TBD"
+              ) >= 0 ||
+              isNewHire
+            ),
+
+          source:
+            "Expanded Calendar",
+
+          sourceRow:
+            rowNumber
+        })
+      );
+
+      rehearsalCount++;
+      continue;
+    }
+
+    weeklyOSRouteExpandedCalendarOtherItem_(
+      day,
+      {
+        what:
+          what,
+
+        time:
+          time,
+
+        guestSpeller:
+          guestSpeller,
+
+        conductor:
+          conductor,
+
+        sourceRow:
+          rowNumber
+      }
+    );
+  }
+
+  status.details = [
+    performanceCount +
+      " performance(s)",
+
+    rehearsalCount +
+      " rehearsal(s)",
+
+    putInCount +
+      " put-in(s)",
+
+    workCallCount +
+      " work call(s)",
+
+    dayOffCount +
+      " day-off item(s)",
+
+    ptCount +
+      " PT item(s)"
+  ].join(" • ");
+}
+
+
+/*************************************************
+ * ROUTE OTHER EXPANDED CALENDAR ITEM
+ *************************************************/
+
+function weeklyOSRouteExpandedCalendarOtherItem_(
+  day,
+  item
+) {
+  const upper =
+    weeklyOSUpper_(
+      item.what
+    );
+
+  if (
+    upper.indexOf(
+      "MEETING"
+    ) >= 0
+  ) {
+    const times =
+      weeklyOSParseTimeRange_(
+        item.time
+      );
+
+    day.meetings.push(
+      weeklyOSCreateMeeting_({
+        title:
+          item.what,
+
+        startTime:
+          times.startTime,
+
+        endTime:
+          times.endTime,
+
+        source:
+          "Expanded Calendar",
+
+        sourceRow:
+          item.sourceRow
+      })
+    );
+
+    return;
+  }
+
+  day.notes.push(
+    weeklyOSCreateNote_({
+      text:
+        [
+          item.what,
+          item.time
+        ]
+          .filter(Boolean)
+          .join(" — "),
+
+      category:
+        "SCHEDULE",
+
+      source:
+        "Expanded Calendar",
+
+      sourceRow:
+        item.sourceRow
+    })
+  );
+}
+
+
+/*************************************************
+ * PRODUCTION CALENDAR
+ *
+ * The Production Calendar is a visual month grid.
+ *
+ * WeeklyOS scans:
+ *
+ * - Date-number rows
+ * - Content rows beneath each date
+ * - Red cast-out text
+ * - Blue company activity text
+ * - Holidays and special events
+ *************************************************/
+
+function weeklyOSReadProductionCalendar_(
+  draft,
+  peopleIndex
+) {
+  const config =
+    weeklyOSGetConfig_();
+
+  const status =
+    draft.sourceStatus
+      .productionCalendar;
+
+  status.checkedAt =
+    weeklyOSNowIso_();
+
+  const sheet =
+    weeklyOSGetSheetSafe_(
+      config.sheets
+        .productionCalendar
+    );
+
+  if (!sheet) {
+    status.status =
+      "NOT_FOUND";
+
+    status.details =
+      'Sheet "' +
+      config.sheets
+        .productionCalendar +
+      '" was not found.';
+
+    return;
+  }
+
+  status.found = true;
+  status.status = "FOUND";
+
+  const range =
+    sheet.getDataRange();
+
+  const displayValues =
+    range.getDisplayValues();
+
+  const fontColors =
+    range.getFontColors();
+
+  const monthBlocks =
+    weeklyOSFindProductionCalendarMonthBlocks_(
+      displayValues
+    );
+
+  let castOutCount = 0;
+  let companyEventCount = 0;
+  let holidayCount = 0;
+  let noteCount = 0;
+
+  monthBlocks.forEach(
+    function (monthBlock) {
+      const parsed =
+        weeklyOSParseProductionCalendarMonth_(
+          draft,
+          displayValues,
+          fontColors,
+          monthBlock,
+          peopleIndex
+        );
+
+      castOutCount +=
+        parsed.castOutCount;
+
+      companyEventCount +=
+        parsed.companyEventCount;
+
+      holidayCount +=
+        parsed.holidayCount;
+
+      noteCount +=
+        parsed.noteCount;
+    }
+  );
+
+  status.details = [
+    castOutCount +
+      " cast out(s)",
+
+    companyEventCount +
+      " company event(s)",
+
+    holidayCount +
+      " holiday item(s)",
+
+    noteCount +
+      " calendar note(s)"
+  ].join(" • ");
+}
+
+
+/*************************************************
+ * FIND MONTH BLOCKS
+ *
+ * Searches the calendar for month labels such as:
+ *
+ * JULY
+ * 2026
+ *************************************************/
+
+function weeklyOSFindProductionCalendarMonthBlocks_(
+  displayValues
+) {
+  const blocks = [];
+
+  for (
+    let rowIndex = 0;
+    rowIndex < displayValues.length;
+    rowIndex++
+  ) {
+    const rowText =
+      weeklyOSUpper_(
+        displayValues[rowIndex]
+          .join(" ")
+      );
+
+    const monthMatch =
+      rowText.match(
+        /\b(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\b/
+      );
+
+    const yearMatch =
+      rowText.match(
+        /\b(20\d{2})\b/
+      );
+
+    if (
+      !monthMatch ||
+      !yearMatch
+    ) {
+      continue;
+    }
+
+    const monthNumber =
+      weeklyOSMonthNameToNumber_(
+        monthMatch[1]
+      );
+
+    blocks.push({
+      headerRow:
+        rowIndex,
+
+      month:
+        monthNumber,
+
+      year:
+        Number(
+          yearMatch[1]
+        )
+    });
+  }
+
+  blocks.forEach(
+    function (block, index) {
+      block.endRow =
+        index < blocks.length - 1
+          ? blocks[index + 1]
+              .headerRow - 1
+          : displayValues.length - 1;
+    }
+  );
+
+  return blocks;
+}
+
+
+/*************************************************
+ * PARSE ONE PRODUCTION CALENDAR MONTH
+ *************************************************/
+
+function weeklyOSParseProductionCalendarMonth_(
+  draft,
+  displayValues,
+  fontColors,
+  monthBlock,
+  peopleIndex
+) {
+  const result = {
+    castOutCount: 0,
+    companyEventCount: 0,
+    holidayCount: 0,
+    noteCount: 0
+  };
+
+  const startRow =
+    monthBlock.headerRow;
+
+  const endRow =
+    monthBlock.endRow;
+
+  for (
+    let rowIndex = startRow;
+    rowIndex <= endRow;
+    rowIndex++
+  ) {
+    for (
+      let columnIndex = 0;
+      columnIndex <
+      displayValues[rowIndex].length;
+      columnIndex++
+    ) {
+      const cellText =
+        weeklyOSNormalizeText_(
+          displayValues[rowIndex]
+            [columnIndex]
+        );
+
+      if (
+        !/^\d{1,2}$/.test(
+          cellText
+        )
+      ) {
+        continue;
+      }
+
+      const dayNumber =
+        Number(cellText);
+
+      if (
+        dayNumber < 1 ||
+        dayNumber > 31
+      ) {
+        continue;
+      }
+
+      const date =
+        new Date(
+          monthBlock.year,
+          monthBlock.month - 1,
+          dayNumber
+        );
+
+      if (
+        date.getMonth() !==
+        monthBlock.month - 1
+      ) {
+        continue;
+      }
+
+      if (
+        !weeklyOSDateIsWithinRange_(
+          date,
+          draft.weekStart,
+          draft.weekEnd
+        )
+      ) {
+        continue;
+      }
+
+      const nextDateRow =
+        weeklyOSFindNextProductionDateRow_(
+          displayValues,
+          rowIndex,
+          columnIndex,
+          endRow
+        );
+
+      const contentStartRow =
+        rowIndex + 1;
+
+      const contentEndRow =
+        nextDateRow === null
+          ? Math.min(
+              rowIndex + 8,
+              endRow
+            )
+          : nextDateRow - 1;
+
+      const parsed =
+        weeklyOSParseProductionCalendarDayCell_(
+          draft,
+          date,
+          displayValues,
+          fontColors,
+          columnIndex,
+          contentStartRow,
+          contentEndRow,
+          peopleIndex
+        );
+
+      result.castOutCount +=
+        parsed.castOutCount;
+
+      result.companyEventCount +=
+        parsed.companyEventCount;
+
+      result.holidayCount +=
+        parsed.holidayCount;
+
+      result.noteCount +=
+        parsed.noteCount;
+    }
+  }
+
+  return result;
+}
+
+
+/*************************************************
+ * FIND NEXT DATE NUMBER IN SAME COLUMN
+ *************************************************/
+
+function weeklyOSFindNextProductionDateRow_(
+  displayValues,
+  currentRow,
+  columnIndex,
+  endRow
+) {
+  for (
+    let rowIndex =
+      currentRow + 1;
+    rowIndex <= endRow;
+    rowIndex++
+  ) {
+    const value =
+      weeklyOSNormalizeText_(
+        displayValues[rowIndex]
+          [columnIndex]
+      );
+
+    if (
+      /^\d{1,2}$/.test(value)
+    ) {
+      return rowIndex;
+    }
+  }
+
+  return null;
+}
+
+
+/*************************************************
+ * PARSE PRODUCTION CALENDAR DAY CELL
+ *************************************************/
+
+function weeklyOSParseProductionCalendarDayCell_(
+  draft,
+  date,
+  displayValues,
+  fontColors,
+  columnIndex,
+  startRow,
+  endRow,
+  peopleIndex
+) {
+  const result = {
+    castOutCount: 0,
+    companyEventCount: 0,
+    holidayCount: 0,
+    noteCount: 0
+  };
+
+  const day =
+    weeklyOSGetDay_(
+      draft,
+      date
+    );
+
+  if (!day) {
+    return result;
+  }
+
+  for (
+    let rowIndex = startRow;
+    rowIndex <= endRow;
+    rowIndex++
+  ) {
+    const text =
+      weeklyOSNormalizeText_(
+        displayValues[rowIndex]
+          [columnIndex]
+      );
+
+    if (!text) {
+      continue;
+    }
+
+    if (
+      /^\d{1,2}$/.test(text)
+    ) {
+      break;
+    }
+
+    const upper =
+      weeklyOSUpper_(
+        text
+      );
+
+    const color =
+      weeklyOSUpper_(
+        fontColors[rowIndex]
+          [columnIndex]
+      );
+
+    day.sources
+      .productionCalendar = true;
+
+    if (
+      upper.indexOf(
+        "PERFORMANCE"
+      ) >= 0 ||
+      weeklyOSLooksLikeTime_(text) ||
+      upper.indexOf(
+        "UNDERSTUDY REH"
+      ) >= 0 ||
+      upper.indexOf(
+        "WORK CALL"
+      ) >= 0 ||
+      upper.indexOf(
+        "AEA DAY OFF"
+      ) >= 0
+    ) {
+      continue;
+    }
+
+    if (
+      upper.indexOf(
+        "OUT"
+      ) >= 0
+    ) {
+      const outItems =
+        weeklyOSParseProductionCastOutText_(
+          text,
+          peopleIndex,
+          rowIndex + 1
+        );
+
+      outItems.forEach(
+        function (outItem) {
+          day.castOuts.push(
+            outItem
+          );
+
+          result.castOutCount++;
+        }
+      );
+
+      continue;
+    }
+
+    const companyEvent =
+      weeklyOSParseCompanyEventText_(
+        text,
+        rowIndex + 1
+      );
+
+    if (companyEvent) {
+      day.companyEvents.push(
+        companyEvent
+      );
+
+      result.companyEventCount++;
+      continue;
+    }
+
+    if (
+      weeklyOSLooksLikeHoliday_(
+        text
+      )
+    ) {
+      day.holidays.push(
+        weeklyOSCreateHoliday_({
+          title:
+            text,
+
+          source:
+            "Production Calendar",
+
+          sourceRow:
+            rowIndex + 1
+        })
+      );
+
+      result.holidayCount++;
+      continue;
+    }
+
+    if (
+      weeklyOSIsProductionCalendarDecorativeText_(
+        text
+      )
+    ) {
+      continue;
+    }
+
+    day.notes.push(
+      weeklyOSCreateNote_({
+        text:
+          text,
+
+        category:
+          color.indexOf(
+            "0000FF"
+          ) >= 0
+            ? "COMPANY"
+            : "CALENDAR",
+
+        source:
+          "Production Calendar",
+
+        sourceRow:
+          rowIndex + 1
+      })
+    );
+
+    result.noteCount++;
+  }
+
+  return result;
+}
+
+
+/*************************************************
+ * PARSE PRODUCTION CALENDAR CAST OUT
+ *************************************************/
+
+function weeklyOSParseProductionCastOutText_(
+  text,
+  peopleIndex,
+  sourceRow
+) {
+  const results = [];
+
+  String(text)
+    .split(
+      /\n|,|;/
+    )
+    .map(
+      weeklyOSNormalizeText_
+    )
+    .filter(Boolean)
+    .forEach(
+      function (segment) {
+        const match =
+          segment.match(
+            /^(.+?)\s+OUT\b/i
+          );
+
+        if (!match) {
+          return;
+        }
+
+        const enteredName =
+          weeklyOSNormalizeText_(
+            match[1]
+          );
+
+        const resolved =
+          weeklyOSResolvePerson_(
+            enteredName,
+            peopleIndex
+          );
+
+        results.push(
+          weeklyOSCreateOut_({
+            category:
+              "CAST",
+
+            person:
+              resolved.fullName ||
+              enteredName,
+
+            role:
+              resolved.role ||
+              "",
+
+            appliesTo:
+              "ALL",
+
+            requiresReview:
+              true,
+
+            sources: [
+              "Production Calendar"
+            ],
+
+            sourceRows: [
+              sourceRow
+            ]
+          })
+        );
+      }
+    );
+
+  return results;
+}
+
+
+/*************************************************
+ * COMPANY EVENT PARSER
+ *************************************************/
+
+function weeklyOSParseCompanyEventText_(
+  text,
+  sourceRow
+) {
+  const upper =
+    weeklyOSUpper_(
+      text
+    );
+
+  let type = "";
+
+  if (
+    upper.indexOf(
+      "START DATE"
+    ) >= 0
+  ) {
+    type =
+      "NEW_HIRE_START";
+  } else if (
+    upper.indexOf(
+      "FIRST PERFORMANCE"
+    ) >= 0
+  ) {
+    type =
+      "FIRST_PERFORMANCE";
+  } else if (
+    upper.indexOf(
+      "SCHEDULED RETURN"
+    ) >= 0 ||
+    upper.indexOf(
+      "RETURN"
+    ) >= 0
+  ) {
+    type =
+      "SCHEDULED_RETURN";
+  } else if (
+    upper.indexOf(
+      "FINAL PERFORMANCE"
+    ) >= 0
+  ) {
+    type =
+      "FINAL_PERFORMANCE";
+  } else if (
+    upper.indexOf(
+      "WATCH SHOW"
+    ) >= 0
+  ) {
+    type =
+      "WATCH_SHOW";
+  } else if (
+    upper.indexOf(
+      "ONBOARDING"
+    ) >= 0 ||
+    upper.indexOf(
+      "MEASUREMENTS"
+    ) >= 0
+  ) {
+    type =
+      "ONBOARDING";
+  } else if (
+    upper.indexOf(
+      "BROADWAY IN BRYANT PARK"
+    ) >= 0
+  ) {
+    type =
+      "SPECIAL_EVENT";
+  } else if (
+    upper.indexOf(
+      "MEETING"
+    ) >= 0
+  ) {
+    type =
+      "COMPANY_MEETING";
+  } else if (
+    upper.indexOf(
+      "GUEST SPELLER"
+    ) >= 0
+  ) {
+    type =
+      "SPECIAL_EVENT";
+  }
+
+  if (!type) {
+    return null;
+  }
+
+  return weeklyOSCreateCompanyEvent_({
+    type:
+      type,
+
+    title:
+      text,
+
+    people:
+      weeklyOSExtractPeopleFromCompanyEvent_(
+        text,
+        type
+      ),
+
+    requiresReview:
+      (
+        type ===
+          "NEW_HIRE_START" ||
+        type ===
+          "SPECIAL_EVENT"
+      ),
+
+    source:
+      "Production Calendar",
+
+    sourceRow:
+      sourceRow
+  });
+}
+
+
+/*************************************************
+ * EXTRACT PEOPLE FROM COMPANY EVENT
+ *************************************************/
+
+function weeklyOSExtractPeopleFromCompanyEvent_(
+  text,
+  type
+) {
+  let cleaned =
+    weeklyOSNormalizeText_(
+      text
+    );
+
+  const phrases = [
+    "START DATE",
+    "FIRST PERFORMANCE",
+    "SCHEDULED RETURN",
+    "FINAL PERFORMANCE",
+    "WATCH SHOW",
+    "ONBOARDING",
+    "MEASUREMENTS"
+  ];
+
+  phrases.forEach(
+    function (phrase) {
+      cleaned =
+        cleaned.replace(
+          new RegExp(
+            phrase,
+            "ig"
+          ),
+          ""
+        );
+    }
+  );
+
+  if (
+    type === "SPECIAL_EVENT" ||
+    type === "COMPANY_MEETING"
+  ) {
+    return [];
+  }
+
+  return cleaned
+    .split(
+      /\s*\+\s*|\s*&\s*|,\s*/
+    )
+    .map(
+      weeklyOSNormalizeText_
+    )
+    .filter(Boolean);
+}
+
+
+/*************************************************
+ * PD / VACATION TRACKER
+ *
+ * Confirmed layout:
+ *
+ * A = Actor
+ * B = Dates
+ * C = # Performances
+ * D = Request Status
+ * E = Type
+ * F = Reason
+ *
+ * Actor name is entered at the top of each block.
+ * WeeklyOS carries the actor forward through
+ * that person's dated rows.
+ *************************************************/
+
+function weeklyOSReadPdVacationTracker_(
+  draft,
+  peopleIndex
+) {
+  const config =
+    weeklyOSGetConfig_();
+
+  const status =
+    draft.sourceStatus
+      .pdVacationTracker;
+
+  status.checkedAt =
+    weeklyOSNowIso_();
+
+  const sheet =
+    weeklyOSGetSheetSafe_(
+      config.sheets
+        .pdVacationTracker
+    );
+
+  if (!sheet) {
+    status.status =
+      "NOT_FOUND";
+
+    status.details =
+      'Sheet "' +
+      config.sheets
+        .pdVacationTracker +
+      '" was not found.';
+
+    return;
+  }
+
+  status.found = true;
+  status.status = "FOUND";
+
+  const lastRow =
+    sheet.getLastRow();
+
+  if (lastRow < 5) {
+    status.details =
+      "PD/Vacation Tracker contains no request rows.";
+
+    return;
+  }
+
+  const rawValues =
+    sheet
+      .getRange(
+        5,
+        1,
+        lastRow - 4,
+        6
+      )
+      .getValues();
+
+  const displayValues =
+    sheet
+      .getRange(
+        5,
+        1,
+        lastRow - 4,
+        6
+      )
+      .getDisplayValues();
+
+  let currentActor = "";
+
+  let enrichedCount = 0;
+  let createdCount = 0;
+
+  for (
+    let index = 0;
+    index < rawValues.length;
+    index++
+  ) {
+    const rowNumber =
+      index + 5;
+
+    const displayRow =
+      displayValues[index];
+
+    const rawRow =
+      rawValues[index];
+
+    const actorCell =
+      weeklyOSNormalizeText_(
+        displayRow[0]
+      );
+
+    if (
+      actorCell &&
+      !weeklyOSLooksLikeDate_(
+        actorCell
+      )
+    ) {
+      currentActor =
+        actorCell;
+    }
+
+    const date =
+      weeklyOSAsDate_(
+        rawRow[1]
+      ) ||
+      weeklyOSAsDate_(
+        displayRow[1]
+      );
+
+    if (
+      !currentActor ||
+      !date
+    ) {
+      continue;
+    }
+
+    if (
+      !weeklyOSDateIsWithinRange_(
+        date,
+        draft.weekStart,
+        draft.weekEnd
+      )
+    ) {
+      continue;
+    }
+
+    const day =
+      weeklyOSGetDay_(
+        draft,
+        date
+      );
+
+    if (!day) {
+      continue;
+    }
+
+    const resolved =
+      weeklyOSResolvePerson_(
+        currentActor,
+        peopleIndex
+      );
+
+    const fullName =
+      resolved.fullName ||
+      currentActor;
+
+    const numberOfPerformances =
+      weeklyOSNumberOrNull_(
+        rawRow[2]
+      );
+
+    const approvalStatus =
+      weeklyOSNormalizeText_(
+        displayRow[3]
+      );
+
+    const type =
+      weeklyOSNormalizeText_(
+        displayRow[4]
+      );
+
+    const reason =
+      weeklyOSNormalizeText_(
+        displayRow[5]
+      );
+
+    const existing =
+      weeklyOSFindMatchingOut_(
+        day.castOuts,
+        fullName
+      );
+
+    if (existing) {
+      existing.role =
+        existing.role ||
+        resolved.role ||
+        "";
+
+      existing.numberOfPerformances =
+        numberOfPerformances;
+
+      existing.approvalStatus =
+        approvalStatus;
+
+      existing.type =
+        type;
+
+      existing.reason =
+        reason;
+
+      existing.sources =
+        weeklyOSUniqueStrings_(
+          existing.sources.concat([
+            "PD/Vacation Tracker"
+          ])
+        );
+
+      existing.sourceRows =
+        weeklyOSUniqueNumbers_(
+          existing.sourceRows.concat([
+            rowNumber
+          ])
+        );
+
+      enrichedCount++;
+    } else {
+      day.castOuts.push(
+        weeklyOSCreateOut_({
+          category:
+            "CAST",
+
+          person:
+            fullName,
+
+          role:
+            resolved.role ||
+            "",
+
+          type:
+            type,
+
+          reason:
+            reason,
+
+          approvalStatus:
+            approvalStatus,
+
+          numberOfPerformances:
+            numberOfPerformances,
+
+          appliesTo:
+            "ALL",
+
+          requiresReview:
+            true,
+
+          sources: [
+            "PD/Vacation Tracker"
+          ],
+
+          sourceRows: [
+            rowNumber
+          ]
+        })
+      );
+
+      createdCount++;
+    }
+
+    day.sources
+      .pdVacationTracker = true;
+  }
+
+  status.details =
+    enrichedCount +
+    " cast out(s) enriched • " +
+    createdCount +
+    " tracker-only out(s) created.";
+}
+
+
+/*************************************************
+ * CREW OUTS
+ *
+ * Confirmed layout:
+ *
+ * A = Crew
+ * B = Department
+ * C = Dates
+ * D = # Performances
+ * E = Request Status
+ * F = Type
+ * G = Reason
+ * H = Cover
+ *************************************************/
+
+function weeklyOSReadCrewOuts_(
+  draft,
+  peopleIndex
+) {
+  const config =
+    weeklyOSGetConfig_();
+
+  const status =
+    draft.sourceStatus
+      .crewOuts;
+
+  status.checkedAt =
+    weeklyOSNowIso_();
+
+  const sheet =
+    weeklyOSGetSheetSafe_(
+      config.sheets
+        .crewOuts
+    );
+
+  if (!sheet) {
+    status.status =
+      "NOT_FOUND";
+
+    status.details =
+      'Sheet "' +
+      config.sheets
+        .crewOuts +
+      '" was not found.';
+
+    return;
+  }
+
+  status.found = true;
+  status.status = "FOUND";
+
+  const lastRow =
+    sheet.getLastRow();
+
+  if (lastRow < 5) {
+    status.details =
+      "Crew Outs contains no request rows.";
+
+    return;
+  }
+
+  const rawValues =
+    sheet
+      .getRange(
+        5,
+        1,
+        lastRow - 4,
+        8
+      )
+      .getValues();
+
+  const displayValues =
+    sheet
+      .getRange(
+        5,
+        1,
+        lastRow - 4,
+        8
+      )
+      .getDisplayValues();
+
+  let currentCrew = "";
+  let currentDepartment = "";
+
+  let crewOutCount = 0;
+
+  for (
+    let index = 0;
+    index < rawValues.length;
+    index++
+  ) {
+    const rowNumber =
+      index + 5;
+
+    const displayRow =
+      displayValues[index];
+
+    const rawRow =
+      rawValues[index];
+
+    const crewCell =
+      weeklyOSNormalizeText_(
+        displayRow[0]
+      );
+
+    const departmentCell =
+      weeklyOSNormalizeText_(
+        displayRow[1]
+      );
+
+    if (
+      crewCell &&
+      !weeklyOSLooksLikeDate_(
+        crewCell
+      )
+    ) {
+      currentCrew =
+        crewCell;
+    }
+
+    if (departmentCell) {
+      currentDepartment =
+        departmentCell;
+    }
+
+    const date =
+      weeklyOSAsDate_(
+        rawRow[2]
+      ) ||
+      weeklyOSAsDate_(
+        displayRow[2]
+      );
+
+    if (
+      !currentCrew ||
+      !date
+    ) {
+      continue;
+    }
+
+    if (
+      !weeklyOSDateIsWithinRange_(
+        date,
+        draft.weekStart,
+        draft.weekEnd
+      )
+    ) {
+      continue;
+    }
+
+    const day =
+      weeklyOSGetDay_(
+        draft,
+        date
+      );
+
+    if (!day) {
+      continue;
+    }
+
+    const resolved =
+      weeklyOSResolvePerson_(
+        currentCrew,
+        peopleIndex
+      );
+
+    day.crewOuts.push(
+      weeklyOSCreateOut_({
+        category:
+          "CREW",
+
+        person:
+          resolved.fullName ||
+          currentCrew,
+
+        department:
+          currentDepartment ||
+          resolved.department ||
+          resolved.role ||
+          "",
+
+        type:
+          weeklyOSNormalizeText_(
+            displayRow[5]
+          ),
+
+        reason:
+          weeklyOSNormalizeText_(
+            displayRow[6]
+          ),
+
+        approvalStatus:
+          weeklyOSNormalizeText_(
+            displayRow[4]
+          ),
+
+        numberOfPerformances:
+          weeklyOSNumberOrNull_(
+            rawRow[3]
+          ),
+
+        coverage:
+          weeklyOSNormalizeText_(
+            displayRow[7]
+          ),
+
+        appliesTo:
+          "ALL",
+
+        requiresReview:
+          !weeklyOSNormalizeText_(
+            displayRow[7]
+          ),
+
+        sources: [
+          "Crew Outs"
+        ],
+
+        sourceRows: [
+          rowNumber
+        ]
+      })
+    );
+
+    day.sources.crewOuts =
+      true;
+
+    crewOutCount++;
+  }
+
+  status.details =
+    crewOutCount +
+    " crew out record(s) detected.";
+}
+
+
+/*************************************************
+ * CONTACT SHEET
+ *
+ * This reader intentionally uses flexible header
+ * detection because Contact Sheet layouts may vary.
+ *
+ * It builds an internal people index used to resolve:
+ *
+ * Justin → Justin Cooley
+ * Kevin → Kevin McHale
+ * Mia → Mia Wilson
+ *
+ * It also stores role / track / department data.
+ *************************************************/
+
+function weeklyOSReadContactSheet_(
+  draft
+) {
+  const config =
+    weeklyOSGetConfig_();
+
+  const status =
+    draft.sourceStatus
+      .contactSheet;
+
+  status.checkedAt =
+    weeklyOSNowIso_();
+
+  const index =
+    weeklyOSCreatePeopleIndex_();
+
+  const sheet =
+    weeklyOSGetSheetSafe_(
+      config.sheets
+        .contactSheet
+    );
+
+  if (!sheet) {
+    status.status =
+      "NOT_FOUND";
+
+    status.details =
+      'Sheet "' +
+      config.sheets
+        .contactSheet +
+      '" was not found.';
+
+    return index;
+  }
+
+  status.found = true;
+  status.status = "FOUND";
+
+  const displayValues =
+    sheet
+      .getDataRange()
+      .getDisplayValues();
+
+  const header =
+    weeklyOSFindContactSheetHeaders_(
+      displayValues
+    );
+
+  let personCount = 0;
+
+  for (
+    let rowIndex =
+      header.headerRow + 1;
+    rowIndex <
+      displayValues.length;
+    rowIndex++
+  ) {
+    const row =
+      displayValues[rowIndex];
+
+    const name =
+      weeklyOSNormalizeText_(
+        row[header.nameColumn]
+      );
+
+    if (!name) {
+      continue;
+    }
+
+    const title =
+      header.titleColumn >= 0
+        ? weeklyOSNormalizeText_(
+            row[
+              header.titleColumn
+            ]
+          )
+        : "";
+
+    const department =
+      header.departmentColumn >= 0
+        ? weeklyOSNormalizeText_(
+            row[
+              header.departmentColumn
+            ]
+          )
+        : "";
+
+    const email =
+      header.emailColumn >= 0
+        ? weeklyOSNormalizeText_(
+            row[
+              header.emailColumn
+            ]
+          )
+        : "";
+
+    weeklyOSAddPersonToIndex_(
+      index,
+      {
+        fullName:
+          name,
+
+        role:
+          title,
+
+        department:
+          department,
+
+        email:
+          email,
+
+        sourceRow:
+          rowIndex + 1
+      }
+    );
+
+    personCount++;
+  }
+
+  status.details =
+    personCount +
+    " contact record(s) indexed.";
+
+  return index;
+}
+
+
+/*************************************************
+ * FIND CONTACT SHEET HEADERS
+ *************************************************/
+
+function weeklyOSFindContactSheetHeaders_(
+  values
+) {
+  const result = {
+    headerRow: 0,
+    nameColumn: 0,
+    titleColumn: -1,
+    departmentColumn: -1,
+    emailColumn: -1
+  };
+
+  let bestScore = -1;
+
+  for (
+    let rowIndex = 0;
+    rowIndex <
+      Math.min(
+        values.length,
+        25
+      );
+    rowIndex++
+  ) {
+    const row =
+      values[rowIndex]
+        .map(
+          weeklyOSUpper_
+        );
+
+    let score = 0;
+
+    const nameColumn =
+      weeklyOSFindColumnByKeywords_(
+        row,
+        [
+          "NAME",
+          "EMPLOYEE",
+          "CAST",
+          "CREW"
+        ]
+      );
+
+    const titleColumn =
+      weeklyOSFindColumnByKeywords_(
+        row,
+        [
+          "TITLE",
+          "ROLE",
+          "TRACK",
+          "POSITION"
+        ]
+      );
+
+    const departmentColumn =
+      weeklyOSFindColumnByKeywords_(
+        row,
+        [
+          "DEPARTMENT",
+          "DEPT"
+        ]
+      );
+
+    const emailColumn =
+      weeklyOSFindColumnByKeywords_(
+        row,
+        [
+          "EMAIL",
+          "E-MAIL"
+        ]
+      );
+
+    if (nameColumn >= 0) {
+      score += 4;
+    }
+
+    if (titleColumn >= 0) {
+      score += 2;
+    }
+
+    if (departmentColumn >= 0) {
+      score += 2;
+    }
+
+    if (emailColumn >= 0) {
+      score += 1;
+    }
+
+    if (score > bestScore) {
+      bestScore =
+        score;
+
+      result.headerRow =
+        rowIndex;
+
+      result.nameColumn =
+        nameColumn >= 0
+          ? nameColumn
+          : 0;
+
+      result.titleColumn =
+        titleColumn;
+
+      result.departmentColumn =
+        departmentColumn;
+
+      result.emailColumn =
+        emailColumn;
+    }
+  }
+
+  return result;
+}
+
+
+/*************************************************
+ * PEOPLE INDEX
+ *************************************************/
+
+function weeklyOSCreatePeopleIndex_() {
+  return {
+    byFullName: {},
+    byFirstName: {},
+    byLastName: {},
+    all: []
+  };
+}
+
+
+function weeklyOSAddPersonToIndex_(
+  index,
+  person
+) {
+  const fullName =
+    weeklyOSNormalizeText_(
+      person.fullName
+    );
+
+  if (!fullName) {
+    return;
+  }
+
+  const parts =
+    fullName.split(
+      /\s+/
+    );
+
+  const firstName =
+    parts[0] || "";
+
+  const lastName =
+    parts.length > 1
+      ? parts[
+          parts.length - 1
+        ]
+      : "";
+
+  const record = {
+    fullName:
+      fullName,
+
+    firstName:
+      firstName,
+
+    lastName:
+      lastName,
+
+    role:
+      weeklyOSNormalizeText_(
+        person.role
+      ),
+
+    department:
+      weeklyOSNormalizeText_(
+        person.department
+      ),
+
+    email:
+      weeklyOSNormalizeText_(
+        person.email
+      ),
+
+    sourceRow:
+      person.sourceRow ||
+      null
+  };
+
+  index.byFullName[
+    weeklyOSUpper_(
+      fullName
+    )
+  ] = record;
+
+  if (firstName) {
+    const firstKey =
+      weeklyOSUpper_(
+        firstName
+      );
+
+    if (
+      !index.byFirstName[
+        firstKey
+      ]
+    ) {
+      index.byFirstName[
+        firstKey
+      ] = [];
+    }
+
+    index.byFirstName[
+      firstKey
+    ].push(
+      record
+    );
+  }
+
+  if (lastName) {
+    const lastKey =
+      weeklyOSUpper_(
+        lastName
+      );
+
+    if (
+      !index.byLastName[
+        lastKey
+      ]
+    ) {
+      index.byLastName[
+        lastKey
+      ] = [];
+    }
+
+    index.byLastName[
+      lastKey
+    ].push(
+      record
+    );
+  }
+
+  index.all.push(
+    record
+  );
+}
+
+
+function weeklyOSResolvePerson_(
+  enteredName,
+  peopleIndex
+) {
+  const blank = {
+    fullName:
+      weeklyOSNormalizeText_(
+        enteredName
+      ),
+
+    role: "",
+    department: "",
+    email: ""
+  };
+
+  if (
+    !peopleIndex ||
+    !enteredName
+  ) {
+    return blank;
+  }
+
+  const normalized =
+    weeklyOSNormalizeText_(
+      enteredName
+    );
+
+  const upper =
+    weeklyOSUpper_(
+      normalized
+    );
+
+  if (
+    peopleIndex.byFullName[
+      upper
+    ]
+  ) {
+    return peopleIndex
+      .byFullName[
+        upper
+      ];
+  }
+
+  const firstName =
+    normalized.split(
+      /\s+/
+    )[0];
+
+  const firstMatches =
+    peopleIndex.byFirstName[
+      weeklyOSUpper_(
+        firstName
+      )
+    ] || [];
+
+  if (
+    firstMatches.length === 1
+  ) {
+    return firstMatches[0];
+  }
+
+  const startsWithMatches =
+    peopleIndex.all.filter(
+      function (person) {
+        return (
+          weeklyOSUpper_(
+            person.fullName
+          ).indexOf(
+            upper
+          ) === 0
+        );
+      }
+    );
+
+  if (
+    startsWithMatches.length === 1
+  ) {
+    return startsWithMatches[0];
+  }
+
+  return blank;
+}
+
+
+/*************************************************
+ * ENRICH OUTS FROM PEOPLE INDEX
+ *
+ * Contact Sheet remains the general people source.
+ * Cast List is the canonical cast-role fallback.
+ *************************************************/
+
+function weeklyOSEnrichOutsFromPeopleIndex_(
+  draft,
+  peopleIndex
+) {
+  const castRoleByPerson =
+    weeklyOSGetCastRoleByPerson_();
+
+  draft.days.forEach(
+    function (day) {
+      day.castOuts.forEach(
+        function (outItem) {
+          const resolved =
+            weeklyOSResolvePerson_(
+              outItem.person,
+              peopleIndex
+            );
+
+          outItem.person =
+            resolved.fullName ||
+            outItem.person;
+
+          const personKey =
+            weeklyOSUpper_(
+              outItem.person
+            );
+
+          outItem.role =
+            outItem.role ||
+            castRoleByPerson[
+              personKey
+            ] ||
+            resolved.role ||
+            "";
+        }
+      );
+
+      day.crewOuts.forEach(
+        function (outItem) {
+          const resolved =
+            weeklyOSResolvePerson_(
+              outItem.person,
+              peopleIndex
+            );
+
+          outItem.person =
+            resolved.fullName ||
+            outItem.person;
+
+          outItem.department =
+            outItem.department ||
+            resolved.department ||
+            resolved.role ||
+            "";
+        }
+      );
+    }
+  );
+}
+
+
+/*************************************************
+ * CAST ROLE BY PERSON
+ *
+ * Cast List:
+ * B = Full Name
+ * D = Full Character
+ * E = Short Role
+ *************************************************/
+
+function weeklyOSGetCastRoleByPerson_() {
+  const result = {};
+
+  const sheet =
+    weeklyOSGetSheetSafe_(
+      "Cast List"
+    );
+
+  if (!sheet) {
+    return result;
+  }
+
+  const lastRow =
+    sheet.getLastRow();
+
+  if (lastRow < 3) {
+    return result;
+  }
+
+  const values =
+    sheet
+      .getRange(
+        3,
+        1,
+        lastRow - 2,
+        6
+      )
+      .getDisplayValues();
+
+  values.forEach(function (row) {
+    const fullName =
+      weeklyOSNormalizeText_(
+        row[1]
+      );
+
+    const shortRole =
+      weeklyOSNormalizeText_(
+        row[4] ||
+        row[0]
+      );
+
+    const fullCharacter =
+      weeklyOSNormalizeText_(
+        row[3]
+      );
+
+    if (!fullName) {
+      return;
+    }
+
+    const role =
+      shortRole ||
+      fullCharacter;
+
+    if (!role) {
+      return;
+    }
+
+    result[
+      weeklyOSUpper_(
+        fullName
+      )
+    ] = role;
+  });
+
+  return result;
+}
+
+/*************************************************
+ * PRESERVE MANUAL DRAFT EDITS
+ *************************************************/
+
+function weeklyOSMergeManualDraftEdits_(
+  refreshedDraft,
+  currentDraft
+) {
+  refreshedDraft.days.forEach(
+    function (newDay) {
+      const oldDay =
+        weeklyOSGetDay_(
+          currentDraft,
+          newDay.date
+        );
+
+      if (!oldDay) {
+        return;
+      }
+
+      newDay.reviewed =
+        Boolean(
+          oldDay.reviewed
+        );
+
+      newDay.rehearsals =
+        weeklyOSMergeManualItems_(
+          newDay.rehearsals,
+          oldDay.rehearsals
+        );
+
+      newDay.meetings =
+        weeklyOSMergeManualItems_(
+          newDay.meetings,
+          oldDay.meetings
+        );
+
+      newDay.workCalls =
+        weeklyOSMergeManualItems_(
+          newDay.workCalls,
+          oldDay.workCalls
+        );
+
+      newDay.putIns =
+        weeklyOSMergeManualItems_(
+          newDay.putIns,
+          oldDay.putIns
+        );
+
+      newDay.companyEvents =
+        weeklyOSMergeManualItems_(
+          newDay.companyEvents,
+          oldDay.companyEvents
+        );
+
+      newDay.notes =
+        weeklyOSMergeManualItems_(
+          newDay.notes,
+          oldDay.notes
+        );
+
+      weeklyOSPreserveOutSelections_(
+        newDay.castOuts,
+        oldDay.castOuts
+      );
+
+      weeklyOSPreserveOutSelections_(
+        newDay.crewOuts,
+        oldDay.crewOuts
+      );
+    }
+  );
+}
+
+
+function weeklyOSMergeManualItems_(
+  sourceItems,
+  oldItems
+) {
+  const merged =
+    Array.isArray(
+      sourceItems
+    )
+      ? sourceItems.slice()
+      : [];
+
+  (
+    Array.isArray(oldItems)
+      ? oldItems
+      : []
+  ).forEach(
+    function (item) {
+      if (
+        item.source !==
+        "Manual"
+      ) {
+        return;
+      }
+
+      merged.push(
+        item
+      );
+    }
+  );
+
+  return merged;
+}
+
+
+function weeklyOSPreserveOutSelections_(
+  newOuts,
+  oldOuts
+) {
+  (
+    Array.isArray(newOuts)
+      ? newOuts
+      : []
+  ).forEach(
+    function (newItem) {
+      const oldItem =
+        (
+          Array.isArray(oldOuts)
+            ? oldOuts
+            : []
+        ).find(
+          function (candidate) {
+            return (
+              weeklyOSUpper_(
+                candidate.person
+              ) ===
+              weeklyOSUpper_(
+                newItem.person
+              )
+            );
+          }
+        );
+
+      if (!oldItem) {
+        return;
+      }
+
+      newItem.coverage =
+        oldItem.coverage ||
+        newItem.coverage;
+
+      newItem.appliesTo =
+        oldItem.appliesTo ||
+        newItem.appliesTo;
+
+      newItem.appliesToRehearsal =
+        Boolean(
+          oldItem
+            .appliesToRehearsal
+        );
+
+      newItem.appliesToPutIn =
+        Boolean(
+          oldItem
+            .appliesToPutIn
+        );
+
+      if (newItem.coverage) {
+        newItem.requiresReview =
+          false;
+      }
+    }
+  );
+}
+
+
+/*************************************************
+ * DEDUPLICATE DRAFT DATA
+ *************************************************/
+
+function weeklyOSDeduplicateDraftSources_(
+  draft
+) {
+  draft.days.forEach(
+    function (day) {
+      day.performances =
+        weeklyOSDeduplicateByKey_(
+          day.performances,
+          function (item) {
+            return [
+              item.performanceNumber,
+              item.time
+            ].join("|");
+          }
+        );
+
+      day.rehearsals =
+        weeklyOSDeduplicateByKey_(
+          day.rehearsals,
+          function (item) {
+            return [
+              item.title,
+              item.startTime,
+              item.endTime
+            ].join("|");
+          }
+        );
+
+      day.putIns =
+        weeklyOSDeduplicateByKey_(
+          day.putIns,
+          function (item) {
+            return [
+              item.title,
+              item.startTime,
+              item.endTime
+            ].join("|");
+          }
+        );
+
+      day.castOuts =
+        weeklyOSMergeDuplicateOuts_(
+          day.castOuts
+        );
+
+      day.crewOuts =
+        weeklyOSMergeDuplicateOuts_(
+          day.crewOuts
+        );
+
+      day.pt =
+        weeklyOSDeduplicateByKey_(
+          day.pt,
+          function (item) {
+            return [
+              item.startTime,
+              item.endTime,
+              item.location
+            ].join("|");
+          }
+        );
+
+      day.companyEvents =
+        weeklyOSDeduplicateByKey_(
+          day.companyEvents,
+          function (item) {
+            return [
+              item.type,
+              item.title
+            ].join("|");
+          }
+        );
+
+      day.notes =
+        weeklyOSDeduplicateByKey_(
+          day.notes,
+          function (item) {
+            return item.text;
+          }
+        );
+    }
+  );
+}
+
+
+function weeklyOSMergeDuplicateOuts_(
+  outs
+) {
+  const byPerson = {};
+
+  (
+    Array.isArray(outs)
+      ? outs
+      : []
+  ).forEach(
+    function (item) {
+      const key =
+        weeklyOSUpper_(
+          item.person
+        );
+
+      if (!key) {
+        return;
+      }
+
+      if (!byPerson[key]) {
+        byPerson[key] =
+          item;
+
+        return;
+      }
+
+      const existing =
+        byPerson[key];
+
+      existing.role =
+        existing.role ||
+        item.role ||
+        "";
+
+      existing.department =
+        existing.department ||
+        item.department ||
+        "";
+
+      existing.type =
+        existing.type ||
+        item.type ||
+        "";
+
+      existing.reason =
+        existing.reason ||
+        item.reason ||
+        "";
+
+      existing.approvalStatus =
+        existing.approvalStatus ||
+        item.approvalStatus ||
+        "";
+
+      existing.numberOfPerformances =
+        existing.numberOfPerformances != null
+          ? existing.numberOfPerformances
+          : item.numberOfPerformances;
+
+      existing.coverage =
+        existing.coverage ||
+        item.coverage ||
+        "";
+
+      existing.sources =
+        weeklyOSUniqueStrings_(
+          []
+            .concat(
+              existing.sources || []
+            )
+            .concat(
+              item.sources || []
+            )
+        );
+
+      existing.sourceRows =
+        weeklyOSUniqueNumbers_(
+          []
+            .concat(
+              existing.sourceRows || []
+            )
+            .concat(
+              item.sourceRows || []
+            )
+        );
+    }
+  );
+
+  return Object.keys(
+    byPerson
+  ).map(
+    function (key) {
+      return byPerson[key];
+    }
+  );
+}
+
+
+/*************************************************
+ * GENERAL SOURCE HELPERS
+ *************************************************/
+
+function weeklyOSExtractPerformanceNumber_(
+  text
+) {
+  const match =
+    String(text || "")
+      .match(
+        /PERFORMANCE\s*#?\s*(\d+)/i
+      );
+
+  return match
+    ? match[1]
+    : "";
+}
+
+
+function weeklyOSDetermineShowType_(
+  time,
+  label
+) {
+  const combined =
+    weeklyOSUpper_(
+      [
+        time,
+        label
+      ]
+        .filter(Boolean)
+        .join(" ")
+    );
+
+  if (
+    combined.indexOf(
+      "MAT"
+    ) >= 0
+  ) {
+    return "MAT";
+  }
+
+  if (
+    combined.indexOf(
+      "EVE"
+    ) >= 0
+  ) {
+    return "EVE";
+  }
+
+  const parsedHour =
+    weeklyOSExtractHour_(
+      time
+    );
+
+  if (
+    parsedHour !== null &&
+    parsedHour < 5
+  ) {
+    return "MAT";
+  }
+
+  return "EVE";
+}
+
+
+function weeklyOSDetermineRehearsalType_(
+  title
+) {
+  const upper =
+    weeklyOSUpper_(
+      title
+    );
+
+  if (
+    upper.indexOf(
+      "UNDERSTUDY"
+    ) >= 0
+  ) {
+    return "UNDERSTUDY";
+  }
+
+  if (
+    upper.indexOf(
+      "NEW "
+    ) >= 0 ||
+    upper.indexOf(
+      "NEW-HIRE"
+    ) >= 0 ||
+    upper.indexOf(
+      "NEW HIRE"
+    ) >= 0
+  ) {
+    return "NEW_HIRE";
+  }
+
+  if (
+    upper.indexOf(
+      "BRUSH"
+    ) >= 0
+  ) {
+    return "BRUSH_UP";
+  }
+
+  if (
+    upper.indexOf(
+      "MUSIC"
+    ) >= 0
+  ) {
+    return "MUSIC_REVIEW";
+  }
+
+  if (
+    upper.indexOf(
+      "DANCE"
+    ) >= 0
+  ) {
+    return "DANCE_REVIEW";
+  }
+
+  return "OTHER";
+}
+
+
+function weeklyOSParseTimeRange_(
+  value
+) {
+  const text =
+    weeklyOSNormalizeText_(
+      value
+    );
+
+  const result = {
+    startTime: "",
+    endTime: "",
+    location: ""
+  };
+
+  if (!text) {
+    return result;
+  }
+
+  const locationMatch =
+    text.match(
+      /\(([^)]+)\)/
+    );
+
+  if (locationMatch) {
+    result.location =
+      weeklyOSNormalizeText_(
+        locationMatch[1]
+      );
+  }
+
+  const cleaned =
+    text.replace(
+      /\([^)]+\)/g,
+      ""
+    );
+
+  const pieces =
+    cleaned.split(
+      /\s*[-–—]\s*/
+    );
+
+  if (pieces.length >= 2) {
+    result.startTime =
+      weeklyOSNormalizeText_(
+        pieces[0]
+      );
+
+    result.endTime =
+      weeklyOSNormalizeText_(
+        pieces[1]
+      );
+  } else {
+    result.startTime =
+      weeklyOSNormalizeText_(
+        cleaned
+      );
+  }
+
+  return result;
+}
+
+
+function weeklyOSExtractHour_(
+  timeText
+) {
+  const match =
+    weeklyOSNormalizeText_(
+      timeText
+    ).match(
+      /^(\d{1,2})(?::\d{2})?\s*(AM|PM)?/i
+    );
+
+  if (!match) {
+    return null;
+  }
+
+  let hour =
+    Number(
+      match[1]
+    );
+
+  const meridiem =
+    weeklyOSUpper_(
+      match[2]
+    );
+
+  if (
+    meridiem === "PM" &&
+    hour !== 12
+  ) {
+    hour += 12;
+  }
+
+  if (
+    meridiem === "AM" &&
+    hour === 12
+  ) {
+    hour = 0;
+  }
+
+  return hour;
+}
+
+
+function weeklyOSLooksLikeTime_(
+  value
+) {
+  return (
+    /\b\d{1,2}:\d{2}\s*(AM|PM)?\b/i.test(
+      String(value || "")
+    )
+  );
+}
+
+
+function weeklyOSLooksLikeDate_(
+  value
+) {
+  return Boolean(
+    weeklyOSAsDate_(
+      value
+    )
+  );
+}
+
+
+function weeklyOSLooksLikeHoliday_(
+  value
+) {
+  const upper =
+    weeklyOSUpper_(
+      value
+    );
+
+  const keywords = [
+    "HOLIDAY",
+    "INDEPENDENCE DAY",
+    "MEMORIAL DAY",
+    "LABOR DAY",
+    "THANKSGIVING",
+    "CHRISTMAS",
+    "NEW YEAR"
+  ];
+
+  return keywords.some(
+    function (keyword) {
+      return (
+        upper.indexOf(
+          keyword
+        ) >= 0
+      );
+    }
+  );
+}
+
+
+function weeklyOSIsProductionCalendarDecorativeText_(
+  value
+) {
+  const upper =
+    weeklyOSUpper_(
+      value
+    );
+
+  const decorativeKeywords = [
+    "BLACK OUT DAYS",
+    "BLACKOUT DAYS",
+    "ON CONTRACT",
+    "VACATION SWING",
+    "PRESENTING"
+  ];
+
+  return decorativeKeywords.some(
+    function (keyword) {
+      return (
+        upper.indexOf(
+          keyword
+        ) >= 0
+      );
+    }
+  );
+}
+
+
+function weeklyOSMonthNameToNumber_(
+  monthName
+) {
+  const months = {
+    JANUARY: 1,
+    FEBRUARY: 2,
+    MARCH: 3,
+    APRIL: 4,
+    MAY: 5,
+    JUNE: 6,
+    JULY: 7,
+    AUGUST: 8,
+    SEPTEMBER: 9,
+    OCTOBER: 10,
+    NOVEMBER: 11,
+    DECEMBER: 12
+  };
+
+  return (
+    months[
+      weeklyOSUpper_(
+        monthName
+      )
+    ] || 0
+  );
+}
+
+
+function weeklyOSFindColumnByKeywords_(
+  normalizedRow,
+  keywords
+) {
+  for (
+    let columnIndex = 0;
+    columnIndex <
+      normalizedRow.length;
+    columnIndex++
+  ) {
+    const cell =
+      normalizedRow[
+        columnIndex
+      ];
+
+    for (
+      let keywordIndex = 0;
+      keywordIndex <
+        keywords.length;
+      keywordIndex++
+    ) {
+      const keyword =
+        weeklyOSUpper_(
+          keywords[
+            keywordIndex
+          ]
+        );
+
+      if (
+        cell === keyword ||
+        cell.indexOf(
+          keyword
+        ) >= 0
+      ) {
+        return columnIndex;
+      }
+    }
+  }
+
+  return -1;
+}
+
+
+function weeklyOSFindMatchingOut_(
+  outs,
+  personName
+) {
+  const upperName =
+    weeklyOSUpper_(
+      personName
+    );
+
+  return (
+    Array.isArray(outs)
+      ? outs
+      : []
+  ).find(
+    function (item) {
+      return (
+        weeklyOSUpper_(
+          item.person
+        ) === upperName
+      );
+    }
+  ) || null;
+}
+
+
+function weeklyOSNumberOrNull_(
+  value
+) {
+  if (
+    value === "" ||
+    value == null
+  ) {
+    return null;
+  }
+
+  const number =
+    Number(value);
+
+  return isNaN(number)
+    ? null
+    : number;
+}
+
+
+function weeklyOSUniqueNumbers_(
+  values
+) {
+  const seen = {};
+
+  return (
+    Array.isArray(values)
+      ? values
+      : []
+  ).filter(
+    function (value) {
+      const number =
+        Number(value);
+
+      if (
+        isNaN(number) ||
+        seen[number]
+      ) {
+        return false;
+      }
+
+      seen[number] =
+        true;
+
+      return true;
+    }
+  );
+}
+
+
+function weeklyOSDeduplicateByKey_(
+  items,
+  keyBuilder
+) {
+  const seen = {};
+
+  return (
+    Array.isArray(items)
+      ? items
+      : []
+  ).filter(
+    function (item) {
+      const key =
+        weeklyOSUpper_(
+          keyBuilder(item)
+        );
+
+      if (
+        !key ||
+        seen[key]
+      ) {
+        return false;
+      }
+
+      seen[key] =
+        true;
+
+      return true;
+    }
+  );
+}
+
+
+/*************************************************
+ * DRAFT SUMMARY FOR LOGS
+ *************************************************/
+
+function weeklyOSBuildDraftSummary_(
+  draft
+) {
+  return {
+    weekStart:
+      draft.weekStart,
+
+    weekEnd:
+      draft.weekEnd,
+
+    days:
+      draft.days.map(
+        function (day) {
+          return {
+            date:
+              day.date,
+
+            performances:
+              day.performances.length,
+
+            rehearsals:
+              day.rehearsals.length,
+
+            putIns:
+              day.putIns.length,
+
+            workCalls:
+              day.workCalls.length,
+
+            castOuts:
+              day.castOuts.length,
+
+            crewOuts:
+              day.crewOuts.length,
+
+            companyEvents:
+              day.companyEvents.length,
+
+            pt:
+              day.pt.length,
+
+            status:
+              day.status
+          };
+        }
+      )
+  };
+}
