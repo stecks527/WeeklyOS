@@ -1,0 +1,1546 @@
+/*************************************************
+ * 25 WEEKLYOS - COMPOSER
+ * Version: 0.1.1
+ * Status: ACTIVE DEVELOPMENT
+ *
+ * Converts the reviewed WeekModel into a composed
+ * Weekly Schedule output model.
+ *
+ * This file does not write to the spreadsheet.
+ *
+ * Core rules:
+ * - Guest Speller identities never appear in
+ *   WeeklyOS-facing output.
+ * - New actor content is marked NEW_ACTOR.
+ * - Performance outs appear inside the applicable
+ *   performance block.
+ * - Crew substitutions, PT, company activity, and
+ *   general notes appear in the NOTES section.
+ *************************************************/
+
+
+/*************************************************
+ * PUBLIC API
+ *************************************************/
+
+function WeeklyComposerOS() {
+  return {
+    version:
+      "0.1.0",
+
+    composeDraft:
+      weeklyOSComposeDraft_,
+
+    composeDay:
+      weeklyOSComposeDay_,
+
+    determineDayTemplate:
+      weeklyOSDetermineDayTemplateType_
+  };
+}
+
+
+/*************************************************
+ * COMPOSE FULL DRAFT
+ *************************************************/
+
+function weeklyOSComposeDraft_(
+  incomingDraft
+) {
+  if (!incomingDraft) {
+    throw new Error(
+      "WeeklyComposerOS cannot compose an empty draft."
+    );
+  }
+
+  const draft =
+    weeklyOSDeepClone_(
+      incomingDraft
+    );
+
+  weeklyOSUpgradeDraftModel_(
+    draft
+  );
+
+  /*
+   * Added in 08 PUT IN ENGINE.
+   *
+   * This populates full onstage assignments before
+   * the weekly-facing object is created.
+   */
+  if (
+    typeof weeklyOSEnsurePutInAssignments_ ===
+    "function"
+  ) {
+    weeklyOSEnsurePutInAssignments_(
+      draft
+    );
+  }
+
+  const output =
+    weeklyOSSanitizeDraftForWeeklyOutput_(
+      draft
+    );
+
+  output.composition = {
+    version:
+      "0.1.0",
+
+    composedAt:
+      weeklyOSNowIso_(),
+
+    days: []
+  };
+
+  output.days.forEach(
+    function (day) {
+      const composedDay =
+        weeklyOSComposeDay_(
+          day,
+          output
+        );
+
+      day.templateType =
+        composedDay.templateType;
+
+      day.compositionHeader =
+        composedDay.headerText;
+
+      day.timeline =
+        composedDay.timeline;
+
+      day.renderNotes =
+        composedDay.notes;
+
+      day.rendering =
+        composedDay.rendering;
+
+      output.composition.days.push(
+        composedDay
+      );
+    }
+  );
+
+  return output;
+}
+
+
+/*************************************************
+ * REMOVE PRIVATE WEEKLY DATA
+ *
+ * Guest Speller information remains available in
+ * the internal saved draft for PrepOS and ReportOS.
+ *
+ * It is deleted from the cloned object used by:
+ * - WeeklyOS popup preview
+ * - Weekly Schedule
+ * - Weekly Email
+ * - Future PDF preview
+ *************************************************/
+
+function weeklyOSSanitizeDraftForWeeklyOutput_(
+  incomingDraft
+) {
+  const draft =
+    weeklyOSDeepClone_(
+      incomingDraft
+    );
+
+  draft.days.forEach(
+    function (day) {
+      day.performances.forEach(
+        function (performance) {
+          delete performance
+            .guestSpeller;
+        }
+      );
+
+      day.putIns.forEach(
+        function (putIn) {
+          delete putIn
+            .guestSpellers;
+        }
+      );
+    }
+  );
+
+  return draft;
+}
+
+
+/*************************************************
+ * COMPOSE ONE DAY
+ *************************************************/
+
+function weeklyOSComposeDay_(
+  day,
+  draft
+) {
+  weeklyOSEnsureDayModel_(
+    day
+  );
+
+  const timeline = [];
+
+  const notes = [];
+
+  const templateType =
+    weeklyOSDetermineDayTemplateType_(
+      day
+    );
+
+  if (day.dayOff) {
+    timeline.push(
+      weeklyOSCreateRenderRow_({
+        rowType:
+          "DAY_OFF",
+
+        time:
+          "",
+
+        activity:
+          day.dayOff.title ||
+          "AEA DAY OFF",
+
+        called:
+          "",
+
+        style:
+          "DAY_OFF",
+
+        sourceId:
+          day.dayOff.id
+      })
+    );
+  } else {
+    weeklyOSAppendPrePerformanceActivityRows_(
+      timeline,
+      day
+    );
+
+    weeklyOSAppendPerformanceBlocks_(
+      timeline,
+      day
+    );
+  }
+
+  weeklyOSAppendCompanyEventNotes_(
+    notes,
+    day
+  );
+
+  weeklyOSAppendPtNotes_(
+    notes,
+    day
+  );
+
+  weeklyOSAppendCrewOutNotes_(
+    notes,
+    day
+  );
+
+  weeklyOSAppendGeneralNotes_(
+    notes,
+    day
+  );
+
+  weeklyOSAppendHolidayNotes_(
+    notes,
+    day
+  );
+
+  return {
+    date:
+      day.date,
+
+    dateLabel:
+      day.dateLabel,
+
+    templateType:
+      templateType,
+
+    headerText:
+      weeklyOSBuildDayHeaderText_(
+        day
+      ),
+
+    timeline:
+      timeline,
+
+    notes:
+      notes,
+
+    rendering: {
+      hideGuestSpeller:
+        true,
+
+      hasGoldDivider:
+        timeline.some(
+          function (row) {
+            return (
+              row.style ===
+              "GOLD_DIVIDER"
+            );
+          }
+        ),
+
+      hasNewActorContent:
+        timeline
+          .concat(notes)
+          .some(
+            function (item) {
+              return (
+                item.style ===
+                "NEW_ACTOR"
+              );
+            }
+          )
+    }
+  };
+}
+
+
+/*************************************************
+ * DETERMINE DAY TEMPLATE
+ *************************************************/
+
+function weeklyOSDetermineDayTemplateType_(
+  day
+) {
+  if (day.dayOff) {
+    return "DAY_OFF";
+  }
+
+  if (
+    day.putIns.length &&
+    day.performances.length
+  ) {
+    return "PUT_IN_AND_PERFORMANCE";
+  }
+
+  if (
+    day.rehearsals.length &&
+    day.performances.length
+  ) {
+    return "REHEARSAL_AND_PERFORMANCE";
+  }
+
+  if (
+    day.workCalls.length &&
+    day.performances.length
+  ) {
+    return "WORK_CALL_AND_PERFORMANCE";
+  }
+
+  if (
+    day.meetings.length &&
+    day.performances.length
+  ) {
+    return "MEETING_AND_PERFORMANCE";
+  }
+
+  if (
+    day.performances.length > 1
+  ) {
+    return "TWO_SHOW_DAY";
+  }
+
+  if (
+    day.performances.length === 1
+  ) {
+    return "PERFORMANCE_ONLY";
+  }
+
+  if (day.putIns.length) {
+    return "PUT_IN_ONLY";
+  }
+
+  if (day.rehearsals.length) {
+    return "REHEARSAL_ONLY";
+  }
+
+  if (day.workCalls.length) {
+    return "WORK_CALL_ONLY";
+  }
+
+  if (day.meetings.length) {
+    return "MEETING_ONLY";
+  }
+
+  return "OTHER";
+}
+
+
+/*************************************************
+ * BUILD DAY HEADER
+ *
+ * Examples:
+ *
+ * PERFORMANCE #259 - 7:00PM
+ *
+ * UNDERSTUDY REHEARSAL - 12:30PM - 4:30PM
+ * + PERFORMANCE #138 - 7:00PM
+ *
+ * UNDERSTUDY REHEARSAL / PUT-IN #6
+ * - 12:30PM - 4:30PM
+ * + PERFORMANCE #147 - 7:00PM
+ *************************************************/
+
+function weeklyOSBuildDayHeaderText_(
+  day
+) {
+  if (day.dayOff) {
+    return (
+      day.dayOff.title ||
+      "AEA DAY OFF"
+    );
+  }
+
+  const activityParts = [];
+
+  const performanceParts = [];
+
+  day.rehearsals.forEach(
+    function (rehearsal) {
+      if (rehearsal.canceled) {
+        return;
+      }
+
+      activityParts.push(
+        weeklyOSBuildActivityHeaderText_(
+          rehearsal.title ||
+          "REHEARSAL",
+
+          rehearsal.startTime,
+
+          rehearsal.endTime
+        )
+      );
+    }
+  );
+
+  day.workCalls.forEach(
+    function (workCall) {
+      activityParts.push(
+        weeklyOSBuildActivityHeaderText_(
+          workCall.title ||
+          "WORK CALL",
+
+          workCall.startTime,
+
+          workCall.endTime
+        )
+      );
+    }
+  );
+
+  day.meetings.forEach(
+    function (meeting) {
+      /*
+       * Meetings normally stay within the timeline
+       * rather than changing the headline.
+       *
+       * They are added only when they replace or
+       * define the major afternoon activity.
+       */
+      if (
+        meeting.replacesExistingCall
+      ) {
+        activityParts.push(
+          weeklyOSBuildActivityHeaderText_(
+            meeting.title ||
+            "MEETING",
+
+            meeting.startTime,
+
+            meeting.endTime
+          )
+        );
+      }
+    }
+  );
+
+  day.putIns.forEach(
+    function (putIn) {
+      const putInTitle =
+        putIn.number
+          ? "PUT-IN #" +
+            putIn.number
+          : "PUT-IN";
+
+      activityParts.push(
+        weeklyOSBuildActivityHeaderText_(
+          putInTitle,
+
+          putIn.startTime,
+
+          putIn.endTime
+        )
+      );
+    }
+  );
+
+  day.performances.forEach(
+    function (performance) {
+      const title =
+        performance
+          .performanceNumber
+          ? "PERFORMANCE #" +
+            performance
+              .performanceNumber
+          : (
+            performance.label ||
+            "PERFORMANCE"
+          );
+
+      performanceParts.push(
+        [
+          title,
+
+          weeklyOSNormalizeHeaderTime_(
+            performance.time
+          )
+        ]
+          .filter(Boolean)
+          .join(" - ")
+      );
+    }
+  );
+
+  let headerText =
+    activityParts
+      .concat(
+        performanceParts
+      )
+      .join(" + ");
+
+  const holidayTitles =
+    day.holidays
+      .map(
+        function (holiday) {
+          return holiday.title;
+        }
+      )
+      .filter(Boolean);
+
+  if (holidayTitles.length) {
+    headerText +=
+      (
+        headerText
+          ? " - "
+          : ""
+      ) +
+      holidayTitles.join(
+        " / "
+      );
+  }
+
+  return headerText;
+}
+
+
+/*************************************************
+ * ACTIVITY HEADER TEXT
+ *************************************************/
+
+function weeklyOSBuildActivityHeaderText_(
+  title,
+  startTime,
+  endTime
+) {
+  const timeRange =
+    [
+      weeklyOSNormalizeHeaderTime_(
+        startTime
+      ),
+
+      weeklyOSNormalizeHeaderTime_(
+        endTime
+      )
+    ]
+      .filter(Boolean)
+      .join(" - ");
+
+  return [
+    weeklyOSUpper_(
+      title
+    ),
+
+    timeRange
+  ]
+    .filter(Boolean)
+    .join(" - ");
+}
+
+
+function weeklyOSNormalizeHeaderTime_(
+  value
+) {
+  return weeklyOSNormalizeText_(
+    value
+  )
+    .replace(
+      /\s+/g,
+      ""
+    )
+    .toUpperCase();
+}
+
+
+/*************************************************
+ * ADD PRE-PERFORMANCE ACTIVITY
+ *************************************************/
+
+function weeklyOSAppendPrePerformanceActivityRows_(
+  timeline,
+  day
+) {
+  day.rehearsals.forEach(
+    function (rehearsal) {
+      if (rehearsal.canceled) {
+        return;
+      }
+
+      weeklyOSAppendRehearsalRows_(
+        timeline,
+        rehearsal
+      );
+    }
+  );
+
+  day.meetings.forEach(
+    function (meeting) {
+      timeline.push(
+        weeklyOSCreateRenderRow_({
+          rowType:
+            "MEETING",
+
+          time:
+            weeklyOSBuildTimeRange_(
+              meeting.startTime,
+              meeting.endTime
+            ),
+
+          activity:
+            weeklyOSBuildLocationText_(
+              meeting.title ||
+              "Meeting",
+
+              meeting.location
+            ),
+
+          called:
+            (
+              meeting.called ||
+              []
+            ).join(", "),
+
+          style:
+            "STANDARD",
+
+          sourceId:
+            meeting.id
+        })
+      );
+    }
+  );
+
+  day.workCalls.forEach(
+    function (workCall) {
+      timeline.push(
+        weeklyOSCreateRenderRow_({
+          rowType:
+            "WORK_CALL",
+
+          time:
+            weeklyOSBuildTimeRange_(
+              workCall.startTime,
+              workCall.endTime
+            ),
+
+          activity:
+            weeklyOSBuildLocationText_(
+              workCall.title ||
+              "Work Call",
+
+              workCall.location
+            ),
+
+          called:
+            (
+              workCall.called ||
+              []
+            ).join(", "),
+
+          style:
+            "STANDARD",
+
+          sourceId:
+            workCall.id
+        })
+      );
+    }
+  );
+
+  day.putIns.forEach(
+    function (putIn) {
+      /*
+       * Added in 08 PUT IN ENGINE.
+       */
+      if (
+        typeof weeklyOSAppendPutInRows_ ===
+        "function"
+      ) {
+        weeklyOSAppendPutInRows_(
+          timeline,
+          putIn
+        );
+      }
+    }
+  );
+
+  if (
+    timeline.length &&
+    day.performances.length
+  ) {
+    timeline.push(
+      weeklyOSCreateRenderRow_({
+        rowType:
+          "DIVIDER",
+
+        time:
+          "",
+
+        activity:
+          "",
+
+        called:
+          "",
+
+        style:
+          "GOLD_DIVIDER"
+      })
+    );
+  }
+}
+
+
+/*************************************************
+ * ADD REHEARSAL ROWS
+ *************************************************/
+
+function weeklyOSAppendRehearsalRows_(
+  timeline,
+  rehearsal
+) {
+  const isNewActor =
+    rehearsal.type ===
+    "NEW_HIRE";
+
+  const style =
+    isNewActor
+      ? "NEW_ACTOR"
+      : "STANDARD";
+
+  const shouldBuildCrewCall =
+    Boolean(
+      rehearsal.startTime &&
+      (
+        rehearsal.type ===
+          "UNDERSTUDY" ||
+        rehearsal.stageManagement
+          .length ||
+        rehearsal.crewDepartments
+          .length
+      )
+    );
+
+  if (shouldBuildCrewCall) {
+    const crewCallTime =
+      weeklyOSSubtractMinutesFromTime_(
+        rehearsal.startTime,
+        30
+      );
+
+    const crewCallPeople =
+      weeklyOSUniqueStrings_(
+        []
+          .concat(
+            rehearsal.stageManagement ||
+            []
+          )
+          .concat(
+            rehearsal.crewDepartments ||
+            []
+          )
+      );
+
+    timeline.push(
+      weeklyOSCreateRenderRow_({
+        rowType:
+          "REHEARSAL_CREW_CALL",
+
+        time:
+          crewCallTime,
+
+        activity:
+          rehearsal.type ===
+            "UNDERSTUDY"
+            ? "Team SM + 1 Props Crew Call"
+            : "Rehearsal Crew Call",
+
+        called:
+          crewCallPeople.length
+            ? crewCallPeople.join(", ")
+            : (
+              rehearsal.type ===
+                "UNDERSTUDY"
+                ? "Team SM, +1 Props"
+                : ""
+            ),
+
+        style:
+          style,
+
+        sourceId:
+          rehearsal.id
+      })
+    );
+  }
+
+  timeline.push(
+    weeklyOSCreateRenderRow_({
+      rowType:
+        "REHEARSAL",
+
+      time:
+        weeklyOSBuildTimeRange_(
+          rehearsal.startTime,
+          rehearsal.endTime
+        ),
+
+      activity:
+        weeklyOSBuildRehearsalDescription_(
+          rehearsal
+        ),
+
+      called:
+        weeklyOSBuildRehearsalCalledList_(
+          rehearsal
+        ),
+
+      style:
+        style,
+
+      sourceId:
+        rehearsal.id
+    })
+  );
+}
+
+
+/*************************************************
+ * REHEARSAL DESCRIPTION
+ *************************************************/
+
+function weeklyOSBuildRehearsalDescription_(
+  rehearsal
+) {
+  const details = [];
+
+  details.push(
+    rehearsal.title ||
+    "Rehearsal"
+  );
+
+  if (rehearsal.musicDirector) {
+    details.push(
+      "w/" +
+      rehearsal.musicDirector
+    );
+  }
+
+  if (
+    rehearsal.rehearsalPianist
+  ) {
+    details.push(
+      "Rehearsal Pianist = " +
+      rehearsal.rehearsalPianist
+    );
+  }
+
+  if (
+    rehearsal.stageManagement &&
+    rehearsal.stageManagement.length
+  ) {
+    details.push(
+      "SM = " +
+      rehearsal.stageManagement
+        .join(", ")
+    );
+  }
+
+  if (
+    rehearsal.creativeStaff &&
+    rehearsal.creativeStaff.length
+  ) {
+    details.push(
+      rehearsal.creativeStaff
+        .join(" + ")
+    );
+  }
+
+  if (rehearsal.notes) {
+    details.push(
+      rehearsal.notes
+    );
+  }
+
+  return details.join(
+    " • "
+  );
+}
+
+
+function weeklyOSBuildRehearsalCalledList_(
+  rehearsal
+) {
+  return weeklyOSUniqueStrings_(
+    []
+      .concat(
+        rehearsal.called ||
+        []
+      )
+      .concat(
+        rehearsal.creativeStaff ||
+        []
+      )
+  ).join(", ");
+}
+
+
+/*************************************************
+ * PERFORMANCE BLOCKS
+ *************************************************/
+
+function weeklyOSAppendPerformanceBlocks_(
+  timeline,
+  day
+) {
+  day.performances.forEach(
+    function (
+      performance,
+      performanceIndex
+    ) {
+      if (
+        performanceIndex > 0
+      ) {
+        timeline.push(
+          weeklyOSCreateRenderRow_({
+            rowType:
+              "DIVIDER",
+
+            time:
+              "",
+
+            activity:
+              "",
+
+            called:
+              "",
+
+            style:
+              "GOLD_DIVIDER"
+          })
+        );
+      }
+
+      const standardCalls =
+        weeklyOSBuildStandardPerformanceCalls_(
+          performance
+        );
+
+      standardCalls.forEach(
+        function (row) {
+          timeline.push(
+            row
+          );
+        }
+      );
+
+      const performanceLines = [];
+
+      performanceLines.push(
+        performance
+          .performanceNumber
+          ? "PERFORMANCE #" +
+            performance
+              .performanceNumber
+          : (
+            performance.label ||
+            "PERFORMANCE"
+          )
+      );
+
+      weeklyOSGetPerformanceCastOuts_(
+        day,
+        performance
+      ).forEach(
+        function (outItem) {
+          performanceLines.push(
+            weeklyOSBuildPerformanceOutLine_(
+              outItem
+            )
+          );
+        }
+      );
+
+      if (
+        performance.conductor
+      ) {
+        performanceLines.push(
+          "Conductor = " +
+          performance.conductor
+        );
+      }
+
+      timeline.push(
+        weeklyOSCreateRenderRow_({
+          rowType:
+            "PERFORMANCE",
+
+          time:
+            performance.time,
+
+          activity:
+            performanceLines.join(
+              "\n"
+            ),
+
+          called:
+            "",
+
+          style:
+            "PERFORMANCE",
+
+          sourceId:
+            performance.id
+        })
+      );
+    }
+  );
+}
+
+
+/*************************************************
+ * STANDARD PERFORMANCE CALLS
+ *************************************************/
+
+function weeklyOSBuildStandardPerformanceCalls_(
+  performance
+) {
+  if (!performance.time) {
+    return [];
+  }
+
+  return [
+    weeklyOSCreateRenderRow_({
+      rowType:
+        "WARDROBE_CALL",
+
+      time:
+        weeklyOSSubtractMinutesFromTime_(
+          performance.time,
+          120
+        ),
+
+      activity:
+        "Wardrobe Crew Call",
+
+      called:
+        "Wardrobe",
+
+      style:
+        "STANDARD"
+    }),
+
+    weeklyOSCreateRenderRow_({
+      rowType:
+        "CREW_CALL",
+
+      time:
+        weeklyOSSubtractMinutesFromTime_(
+          performance.time,
+          90
+        ),
+
+      activity:
+        "Crew Call",
+
+      called:
+        "Crew, SM Team",
+
+      style:
+        "STANDARD"
+    }),
+
+    weeklyOSCreateRenderRow_({
+      rowType:
+        "HAIR_CALL",
+
+      time:
+        weeklyOSSubtractMinutesFromTime_(
+          performance.time,
+          60
+        ),
+
+      activity:
+        "Hair Call",
+
+      called:
+        "Leana C.",
+
+      style:
+        "STANDARD"
+    }),
+
+    weeklyOSCreateRenderRow_({
+      rowType:
+        "HALF_HOUR",
+
+      time:
+        weeklyOSSubtractMinutesFromTime_(
+          performance.time,
+          30
+        ),
+
+      activity:
+        "Half Hour / House Open",
+
+      called:
+        "Full Cast",
+
+      style:
+        "STANDARD"
+    })
+  ].filter(
+    function (row) {
+      return Boolean(
+        row.time
+      );
+    }
+  );
+}
+
+
+/*************************************************
+ * PERFORMANCE CAST OUTS
+ *************************************************/
+
+function weeklyOSGetPerformanceCastOuts_(
+  day,
+  performance
+) {
+  return (
+    day.castOuts || []
+  ).filter(
+    function (outItem) {
+      return weeklyOSOutAppliesToPerformance_(
+        outItem,
+        performance
+      );
+    }
+  );
+}
+
+
+function weeklyOSOutAppliesToPerformance_(
+  outItem,
+  performance
+) {
+  const scope =
+    weeklyOSUpper_(
+      outItem.appliesTo ||
+      "ALL"
+    );
+
+  const showType =
+    weeklyOSUpper_(
+      performance.showType
+    );
+
+  if (
+    scope === "ALL" ||
+    scope === "MAT & EVE" ||
+    scope ===
+      "REHEARSAL & PERFORMANCE" ||
+    scope ===
+      "PUT-IN & PERFORMANCE"
+  ) {
+    return true;
+  }
+
+  if (
+    scope === "MAT" &&
+    showType === "MAT"
+  ) {
+    return true;
+  }
+
+  if (
+    scope === "EVE" &&
+    showType === "EVE"
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+
+function weeklyOSBuildPerformanceOutLine_(
+  outItem
+) {
+  const person =
+    weeklyOSAbbreviateName_(
+      outItem.person
+    );
+
+  const coverage =
+    weeklyOSAbbreviateName_(
+      outItem.coverage
+    );
+
+  if (
+    outItem.role &&
+    coverage
+  ) {
+    return (
+      person +
+      " OUT, " +
+      outItem.role +
+      " = " +
+      coverage
+    );
+  }
+
+  if (coverage) {
+    return (
+      person +
+      " OUT, " +
+      coverage +
+      " IN"
+    );
+  }
+
+  return (
+    person +
+    " OUT"
+  );
+}
+
+
+/*************************************************
+ * NOTES COMPOSITION
+ *************************************************/
+
+function weeklyOSAppendCompanyEventNotes_(
+  notes,
+  day
+) {
+  day.companyEvents.forEach(
+    function (event) {
+      const isNewActor =
+        weeklyOSIsNewActorCompanyEvent_(
+          event
+        );
+
+      notes.push(
+        weeklyOSCreateRenderNote_({
+          category:
+            isNewActor
+              ? "COMPANY_MILESTONE"
+              : "COMPANY_ACTIVITY",
+
+          text:
+            weeklyOSBuildCompanyEventText_(
+              event
+            ),
+
+          style:
+            isNewActor
+              ? "NEW_ACTOR"
+              : "STANDARD",
+
+          sourceId:
+            event.id
+        })
+      );
+    }
+  );
+}
+
+
+function weeklyOSIsNewActorCompanyEvent_(
+  event
+) {
+  return [
+    "NEW_HIRE_START",
+    "FIRST_PERFORMANCE",
+    "SCHEDULED_RETURN",
+    "FINAL_PERFORMANCE",
+    "WATCH_SHOW",
+    "ONBOARDING"
+  ].indexOf(
+    event.type
+  ) >= 0;
+}
+
+
+function weeklyOSBuildCompanyEventText_(
+  event
+) {
+  if (event.title) {
+    return event.title;
+  }
+
+  const people =
+    (
+      event.people || []
+    ).join(", ");
+
+  return [
+    weeklyOSCompanyEventLabel_(
+      event.type
+    ),
+
+    people
+  ]
+    .filter(Boolean)
+    .join(": ");
+}
+
+
+function weeklyOSAppendPtNotes_(
+  notes,
+  day
+) {
+  day.pt.forEach(
+    function (pt) {
+      const timeRange =
+        weeklyOSBuildTimeRange_(
+          pt.startTime,
+          pt.endTime
+        );
+
+      const location =
+        pt.location
+          ? " (" +
+            pt.location +
+            ")"
+          : "";
+
+      notes.push(
+        weeklyOSCreateRenderNote_({
+          category:
+            "PT",
+
+          text:
+            "PT " +
+            timeRange +
+            location,
+
+          style:
+            "STANDARD",
+
+          sourceId:
+            pt.id
+        })
+      );
+    }
+  );
+}
+
+
+function weeklyOSAppendCrewOutNotes_(
+  notes,
+  day
+) {
+  day.crewOuts.forEach(
+    function (outItem) {
+      const person =
+        weeklyOSAbbreviateName_(
+          outItem.person
+        );
+
+      /*
+       * Crew IN names remain full-length.
+       */
+      const coverage =
+        weeklyOSNormalizeText_(
+          outItem.coverage
+        );
+
+      let text =
+        person +
+        " OUT";
+
+      if (coverage) {
+        text +=
+          ", " +
+          coverage +
+          " IN";
+      }
+
+      if (outItem.department) {
+        text +=
+          " (" +
+          outItem.department +
+          ")";
+      }
+
+      if (
+        outItem.appliesTo &&
+        outItem.appliesTo !==
+          "ALL"
+      ) {
+        text +=
+          " (" +
+          weeklyOSFormatOutScopeForWeekly_(
+            outItem.appliesTo
+          ) +
+          ")";
+      }
+
+      notes.push(
+        weeklyOSCreateRenderNote_({
+          category:
+            "CREW_COVERAGE",
+
+          text:
+            text,
+
+          style:
+            "STANDARD",
+
+          sourceId:
+            outItem.id
+        })
+      );
+    }
+  );
+}
+
+
+function weeklyOSAppendGeneralNotes_(
+  notes,
+  day
+) {
+  day.notes.forEach(
+    function (note) {
+      const text =
+        typeof note === "string"
+          ? note
+          : note.text;
+
+      if (!text) {
+        return;
+      }
+
+      const isNewActor =
+        weeklyOSNoteUsesNewActorStyle_(
+          note
+        );
+
+      notes.push(
+        weeklyOSCreateRenderNote_({
+          category:
+            typeof note === "object"
+              ? note.category ||
+                "GENERAL"
+              : "GENERAL",
+
+          text:
+            text,
+
+          style:
+            isNewActor
+              ? "NEW_ACTOR"
+              : "STANDARD",
+
+          sourceId:
+            typeof note === "object"
+              ? note.id || ""
+              : ""
+        })
+      );
+    }
+  );
+}
+
+
+function weeklyOSNoteUsesNewActorStyle_(
+  note
+) {
+  if (
+    note &&
+    typeof note === "object" &&
+    note.style === "NEW_ACTOR"
+  ) {
+    return true;
+  }
+
+  const text =
+    typeof note === "string"
+      ? note
+      : (
+        note &&
+        note.text
+          ? note.text
+          : ""
+      );
+
+  return weeklyOSContainsAnyKeyword_(
+    text,
+    [
+      "NEW HIRE",
+      "FIRST PERFORMANCE",
+      "SCHEDULED RETURN",
+      "FINAL PERFORMANCE",
+      "START DATE",
+      "WATCH SHOW",
+      "ONBOARDING",
+      "MEASUREMENTS"
+    ]
+  );
+}
+
+
+function weeklyOSAppendHolidayNotes_(
+  notes,
+  day
+) {
+  day.holidays.forEach(
+    function (holiday) {
+      if (!holiday.title) {
+        return;
+      }
+
+      notes.push(
+        weeklyOSCreateRenderNote_({
+          category:
+            "HOLIDAY",
+
+          text:
+            holiday.title,
+
+          style:
+            "HOLIDAY",
+
+          sourceId:
+            holiday.id
+        })
+      );
+    }
+  );
+}
