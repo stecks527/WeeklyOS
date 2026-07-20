@@ -1,0 +1,559 @@
+/*************************************************
+ * 25 WEEKLYOS - NEW ACTOR CALENDARS
+ * Version: 1.0.0
+ * Status: ACTIVE
+ *
+ * Reads calendar-style rehearsal sheets whose names begin:
+ *
+ *   New ...
+ *
+ * Examples:
+ *   New Olive + Rona
+ *   New Chip
+ *
+ * These sheets become a first-class WeeklyOS source.
+ *
+ * Current internal rehearsal type remains NEW_HIRE so the
+ * existing Weekly Composer, popup, and blue NEW_ACTOR style
+ * continue to work without a larger migration today.
+ *************************************************/
+
+function weeklyOSReadNewActorCalendars_(draft) {
+  if (!draft) {
+    return { sheetsFound: 0, sheetsRead: 0, rehearsals: 0, meetings: 0, notes: 0 };
+  }
+
+  const status = weeklyOSNewActorEnsureSourceStatus_(draft);
+  status.checkedAt = weeklyOSNowIso_();
+
+  const sheets = weeklyOSFindNewActorCalendarSheets_();
+  const result = {
+    sheetsFound: sheets.length,
+    sheetsRead: 0,
+    rehearsals: 0,
+    meetings: 0,
+    notes: 0,
+    sheetNames: []
+  };
+
+  if (!sheets.length) {
+    status.found = false;
+    status.status = "NOT_FOUND";
+    status.details = 'No calendar-style sheet beginning with "New " was found.';
+    return result;
+  }
+
+  sheets.forEach(function (sheet) {
+    const parsed = weeklyOSReadOneNewActorCalendar_(draft, sheet);
+    if (!parsed || !parsed.isCalendar) return;
+
+    result.sheetsRead++;
+    result.rehearsals += parsed.rehearsals;
+    result.meetings += parsed.meetings;
+    result.notes += parsed.notes;
+    result.sheetNames.push(sheet.getName());
+  });
+
+  status.found = result.sheetsRead > 0;
+  status.status = result.sheetsRead > 0 ? "FOUND" : "NOT_FOUND";
+  status.details = [
+    result.sheetsRead + " rehearsal calendar(s)",
+    result.rehearsals + " rehearsal item(s)",
+    result.meetings + " meeting/activity item(s)"
+  ].join(" • ");
+
+  return result;
+}
+
+function weeklyOSFindNewActorCalendarSheets_() {
+  return weeklyOSGetSpreadsheet_()
+    .getSheets()
+    .filter(function (sheet) {
+      const name = String(sheet.getName() || "").trim();
+
+      if (!/^NEW\s+/i.test(name)) return false;
+      if (/^(NEW HIRE|NEW OUT|NEW COMPANY)/i.test(name)) return false;
+
+      return weeklyOSSheetLooksLikeMonthCalendar_(sheet);
+    });
+}
+
+function weeklyOSSheetLooksLikeMonthCalendar_(sheet) {
+  if (!sheet) return false;
+
+  const lastRow = sheet.getLastRow();
+  const lastColumn = sheet.getLastColumn();
+
+  if (lastRow < 8 || lastColumn < 7) return false;
+
+  const values = sheet
+    .getRange(1, 1, Math.min(lastRow, 120), Math.min(lastColumn, 12))
+    .getDisplayValues();
+
+  const monthBlocks = typeof weeklyOSFindProductionCalendarMonthBlocks_ === "function"
+    ? weeklyOSFindProductionCalendarMonthBlocks_(values)
+    : weeklyOSFindMonthBlocksFallback_(values);
+
+  if (!monthBlocks.length) return false;
+
+  const flattened = weeklyOSUpper_(values.map(function (row) {
+    return row.join(" ");
+  }).join(" "));
+
+  return (
+    flattened.indexOf("SUNDAY") >= 0 &&
+    flattened.indexOf("MONDAY") >= 0 &&
+    flattened.indexOf("SATURDAY") >= 0
+  );
+}
+
+function weeklyOSReadOneNewActorCalendar_(draft, sheet) {
+  const displayValues = sheet.getDataRange().getDisplayValues();
+
+  const monthBlocks = typeof weeklyOSFindProductionCalendarMonthBlocks_ === "function"
+    ? weeklyOSFindProductionCalendarMonthBlocks_(displayValues)
+    : weeklyOSFindMonthBlocksFallback_(displayValues);
+
+  if (!monthBlocks.length) {
+    return { isCalendar: false, rehearsals: 0, meetings: 0, notes: 0 };
+  }
+
+  const result = { isCalendar: true, rehearsals: 0, meetings: 0, notes: 0 };
+
+  monthBlocks.forEach(function (monthBlock) {
+    const monthResult = weeklyOSParseNewActorCalendarMonth_(
+      draft,
+      sheet,
+      displayValues,
+      monthBlock
+    );
+
+    result.rehearsals += monthResult.rehearsals;
+    result.meetings += monthResult.meetings;
+    result.notes += monthResult.notes;
+  });
+
+  return result;
+}
+
+function weeklyOSParseNewActorCalendarMonth_(draft, sheet, displayValues, monthBlock) {
+  const result = { rehearsals: 0, meetings: 0, notes: 0 };
+
+  for (let rowIndex = monthBlock.headerRow; rowIndex <= monthBlock.endRow; rowIndex++) {
+    for (let columnIndex = 0; columnIndex < displayValues[rowIndex].length; columnIndex++) {
+      const cellText = weeklyOSNormalizeText_(displayValues[rowIndex][columnIndex]);
+      if (!/^\d{1,2}$/.test(cellText)) continue;
+
+      const dayNumber = Number(cellText);
+      if (dayNumber < 1 || dayNumber > 31) continue;
+
+      const date = new Date(monthBlock.year, monthBlock.month - 1, dayNumber);
+      if (date.getMonth() !== monthBlock.month - 1) continue;
+
+      if (!weeklyOSDateIsWithinRange_(date, draft.weekStart, draft.weekEnd)) continue;
+
+      const nextDateRow = typeof weeklyOSFindNextProductionDateRow_ === "function"
+        ? weeklyOSFindNextProductionDateRow_(
+            displayValues,
+            rowIndex,
+            columnIndex,
+            monthBlock.endRow
+          )
+        : weeklyOSFindNextDateRowFallback_(
+            displayValues,
+            rowIndex,
+            columnIndex,
+            monthBlock.endRow
+          );
+
+      const contentStartRow = rowIndex + 1;
+      const contentEndRow = nextDateRow === null
+        ? Math.min(rowIndex + 10, monthBlock.endRow)
+        : nextDateRow - 1;
+
+      const dayResult = weeklyOSParseNewActorCalendarDay_(
+        draft,
+        sheet,
+        date,
+        displayValues,
+        columnIndex,
+        contentStartRow,
+        contentEndRow
+      );
+
+      result.rehearsals += dayResult.rehearsals;
+      result.meetings += dayResult.meetings;
+      result.notes += dayResult.notes;
+    }
+  }
+
+  return result;
+}
+
+function weeklyOSParseNewActorCalendarDay_(
+  draft,
+  sheet,
+  date,
+  displayValues,
+  columnIndex,
+  startRow,
+  endRow
+) {
+  const result = { rehearsals: 0, meetings: 0, notes: 0 };
+  const day = weeklyOSGetDay_(draft, date);
+
+  if (!day) return result;
+
+  weeklyOSEnsureDayModel_(day);
+
+  for (let rowIndex = startRow; rowIndex <= endRow; rowIndex++) {
+    const raw = String(displayValues[rowIndex][columnIndex] || "").trim();
+    if (!raw) continue;
+
+    const compact = weeklyOSNormalizeText_(raw);
+    if (/^\d{1,2}$/.test(compact)) break;
+
+    const upper = weeklyOSUpper_(compact);
+    if (weeklyOSNewActorCalendarIsIgnoredItem_(upper)) continue;
+
+    day.sources = day.sources || {};
+    day.sources.newActorCalendars = true;
+
+    if (weeklyOSNewActorLooksLikeRehearsal_(upper)) {
+      day.rehearsals.push(
+        weeklyOSBuildNewActorRehearsal_(compact, sheet.getName(), rowIndex + 1)
+      );
+      result.rehearsals++;
+      continue;
+    }
+
+    if (weeklyOSNewActorLooksLikeMeeting_(upper)) {
+      day.meetings.push(
+        weeklyOSBuildNewActorMeeting_(compact, sheet.getName(), rowIndex + 1)
+      );
+      result.meetings++;
+      continue;
+    }
+
+    if (weeklyOSNewActorLooksLikeUsefulNote_(upper)) {
+      day.notes.push(
+        weeklyOSCreateNote_({
+          text: compact,
+          category: "NEW_ACTOR",
+          style: "NEW_ACTOR",
+          source: "New Actor Calendar: " + sheet.getName(),
+          sourceRow: rowIndex + 1
+        })
+      );
+      result.notes++;
+    }
+  }
+
+  return result;
+}
+
+function weeklyOSBuildNewActorRehearsal_(text, sheetName, sourceRow) {
+  const times = weeklyOSNewActorExtractTimes_(text);
+  const withoutTime = weeklyOSNewActorRemoveLeadingTime_(text);
+  const logistics = weeklyOSNewActorParseLogistics_(withoutTime);
+  const title = weeklyOSNewActorCleanTitle_(withoutTime);
+  const upper = weeklyOSUpper_(withoutTime);
+
+  const isOnstage = upper.indexOf("ONSTAGE") >= 0 || upper.indexOf("ON STAGE") >= 0;
+  const isOffsite = upper.indexOf("OFFSITE") >= 0;
+
+  return weeklyOSCreateRehearsal_({
+    type: "NEW_HIRE",
+    title: title || weeklyOSNewActorSheetLabel_(sheetName) + " Rehearsal",
+    startTime: times.startTime,
+    endTime: times.endTime,
+    location: isOnstage ? "Theatre" : "",
+    called: weeklyOSNewActorParseCalled_(withoutTime, sheetName),
+    stageManagement: logistics.stageManagement,
+    crewDepartments: logistics.crewDepartments,
+    rehearsalPianist: logistics.rehearsalPianist,
+    musicDirector: logistics.musicDirector,
+    notes: isOffsite ? "Confirm offsite rehearsal location." : "",
+    goldDividerBeforePerformance: true,
+    requiresReview: (
+      isOffsite ||
+      upper.indexOf("TBD") >= 0 ||
+      !times.startTime ||
+      !times.endTime
+    ),
+    source: "New Actor Calendar: " + sheetName,
+    sourceRow: sourceRow
+  });
+}
+
+function weeklyOSBuildNewActorMeeting_(text, sheetName, sourceRow) {
+  const times = weeklyOSNewActorExtractTimes_(text);
+
+  return weeklyOSCreateMeeting_({
+    title: weeklyOSNewActorRemoveLeadingTime_(text),
+    startTime: times.startTime,
+    endTime: times.endTime,
+    location: "",
+    called: weeklyOSNewActorParseCalled_(text, sheetName),
+    notes: "",
+    source: "New Actor Calendar: " + sheetName,
+    sourceRow: sourceRow
+  });
+}
+
+function weeklyOSNewActorCalendarIsIgnoredItem_(upper) {
+  return (
+    upper.indexOf("PERFORMANCE") >= 0 ||
+    upper.indexOf("AEA DAY OFF") >= 0 ||
+    upper.indexOf(" OUT") >= 0 ||
+    upper.indexOf("SCHEDULED RETURN") >= 0 ||
+    upper.indexOf("BROADWAY IN BRYANT PARK") >= 0
+  );
+}
+
+function weeklyOSNewActorLooksLikeRehearsal_(upper) {
+  return (
+    upper.indexOf("REHEARSAL") >= 0 ||
+    upper.indexOf(" REH") >= 0 ||
+    upper.indexOf("PRACTICE") >= 0 ||
+    upper.indexOf("PUT-IN") >= 0 ||
+    upper.indexOf("PUT IN") >= 0 ||
+    upper.indexOf("MUSIC REVIEW") >= 0 ||
+    upper.indexOf("DANCE REVIEW") >= 0 ||
+    upper.indexOf("CHOREO") >= 0
+  );
+}
+
+function weeklyOSNewActorLooksLikeMeeting_(upper) {
+  return (
+    upper.indexOf("MEASUREMENT") >= 0 ||
+    upper.indexOf("ONBOARDING") >= 0 ||
+    upper.indexOf("HAIR CHAT") >= 0 ||
+    upper.indexOf("COSTUME FITTING") >= 0 ||
+    upper.indexOf("MEETING") >= 0
+  );
+}
+
+function weeklyOSNewActorLooksLikeUsefulNote_(upper) {
+  return (
+    upper.indexOf("WATCH SHOW") >= 0 ||
+    upper.indexOf("WATCH/SHOW") >= 0 ||
+    upper.indexOf("WATCH/TRAIL") >= 0 ||
+    upper.indexOf("FIRST PERF") >= 0 ||
+    upper.indexOf("FINAL PERF") >= 0 ||
+    upper.indexOf("START DATE") >= 0
+  );
+}
+
+function weeklyOSNewActorExtractTimes_(text) {
+  const source = String(text || "").replace(/\u00A0/g, " ").trim();
+  const match = source.match(
+    /^\s*(\d{1,2}(?::\d{2})?)\s*(AM|PM)?\s*(?:-|–|—|TO)\s*(\d{1,2}(?::\d{2})?)\s*(AM|PM)\b/i
+  );
+
+  if (!match) return { startTime: "", endTime: "" };
+
+  const endMeridiem = String(match[4] || "").toUpperCase();
+  const startMeridiem = String(match[2] || endMeridiem).toUpperCase();
+
+  return {
+    startTime: weeklyOSNewActorNormalizeClock_(match[1], startMeridiem),
+    endTime: weeklyOSNewActorNormalizeClock_(match[3], endMeridiem)
+  };
+}
+
+function weeklyOSNewActorRemoveLeadingTime_(text) {
+  return weeklyOSNormalizeText_(
+    String(text || "").replace(
+      /^\s*\d{1,2}(?::\d{2})?\s*(?:AM|PM)?\s*(?:-|–|—|TO)\s*\d{1,2}(?::\d{2})?\s*(?:AM|PM)\s*/i,
+      ""
+    )
+  );
+}
+
+function weeklyOSNewActorNormalizeClock_(clock, meridiem) {
+  const parts = String(clock || "").split(":");
+  const hour = Number(parts[0] || 0);
+  const minute = parts.length > 1
+    ? String(parts[1] || "00").padStart(2, "0")
+    : "00";
+
+  if (!hour) return "";
+
+  return hour + ":" + minute + " " + String(meridiem || "").toUpperCase();
+}
+
+function weeklyOSNewActorParseLogistics_(text) {
+  const source = String(text || "");
+  const stageManagement = [];
+  const crewDepartments = [];
+  let rehearsalPianist = "";
+  let musicDirector = "";
+
+  const smMatch = source.match(/\bSM\s*=\s*([^()]+)/i);
+  if (smMatch) {
+    String(smMatch[1] || "")
+      .split(/,|\/|\+/)
+      .map(weeklyOSNormalizeText_)
+      .filter(function (item) {
+        return item && !/REH\s*PIANIST/i.test(item);
+      })
+      .forEach(function (item) {
+        if (stageManagement.indexOf(item) === -1) stageManagement.push(item);
+      });
+  }
+
+  const pianistMatch = source.match(
+    /(?:REH(?:EARSAL)?\s*PIANIST|PIANIST)\s*(?:=)?\s*([^,)]+)/i
+  );
+  if (pianistMatch) rehearsalPianist = weeklyOSNormalizeText_(pianistMatch[1]);
+
+  const musicMatch = source.match(/\b(?:MUSIC|MD)\s*=\s*([^,)]+)/i);
+  if (musicMatch) musicDirector = weeklyOSNormalizeText_(musicMatch[1]);
+
+  if (/\+1\s*PROPS?/i.test(source)) crewDepartments.push("+1 Props");
+
+  return {
+    stageManagement: stageManagement,
+    crewDepartments: crewDepartments,
+    rehearsalPianist: rehearsalPianist,
+    musicDirector: musicDirector
+  };
+}
+
+function weeklyOSNewActorCleanTitle_(text) {
+  return weeklyOSNormalizeText_(
+    String(text || "")
+      .replace(/\(\s*SM\s*=[^)]+\)/ig, "")
+      .replace(/\(\s*[^)]*REH(?:EARSAL)?\s*PIANIST[^)]*\)/ig, "")
+      .replace(/\s+/g, " ")
+  );
+}
+
+function weeklyOSNewActorParseCalled_(text, sheetName) {
+  const withoutTime = weeklyOSNewActorRemoveLeadingTime_(text);
+  const match = withoutTime.match(
+    /^(.+?)\s+(?:ONLY\s+)?(?:ONSTAGE|ON\s+STAGE|OFFSITE|REHEARSAL|UNDERSTUDY|PUT-IN|PUT IN|GUEST SPELLER|MUSIC|DANCE|CHOREO|HAIR CHAT|MEASUREMENTS?|ONBOARDING)\b/i
+  );
+
+  const leading = match ? weeklyOSNormalizeText_(match[1]) : "";
+  const cleaned = leading.replace(/\bNEW\b/ig, "").replace(/\s+/g, " ").trim();
+
+  if (cleaned && cleaned.length <= 80 && !weeklyOSLooksLikeTime_(cleaned)) {
+    return cleaned
+      .split(/\s+(?:AND|\+|&)\s+/i)
+      .map(weeklyOSNormalizeText_)
+      .filter(Boolean);
+  }
+
+  const fallback = weeklyOSNewActorSheetLabel_(sheetName);
+
+  return fallback
+    ? fallback
+        .split(/\s+\+\s+|\s+AND\s+/i)
+        .map(weeklyOSNormalizeText_)
+        .filter(Boolean)
+    : [];
+}
+
+function weeklyOSNewActorSheetLabel_(sheetName) {
+  return weeklyOSNormalizeText_(String(sheetName || "").replace(/^NEW\s+/i, ""));
+}
+
+function weeklyOSNewActorEnsureSourceStatus_(draft) {
+  draft.sourceStatus = draft.sourceStatus || {};
+
+  if (!draft.sourceStatus.newActorCalendars) {
+    draft.sourceStatus.newActorCalendars = {
+      label: "New Actor Rehearsal Calendars",
+      found: false,
+      status: "NOT_CHECKED",
+      details: "",
+      checkedAt: null
+    };
+  }
+
+  return draft.sourceStatus.newActorCalendars;
+}
+
+function weeklyOSFindMonthBlocksFallback_(displayValues) {
+  const blocks = [];
+
+  for (let rowIndex = 0; rowIndex < displayValues.length; rowIndex++) {
+    const rowText = weeklyOSUpper_(displayValues[rowIndex].join(" "));
+    const monthMatch = rowText.match(
+      /\b(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\b/
+    );
+    const yearMatch = rowText.match(/\b(20\d{2})\b/);
+
+    if (!monthMatch || !yearMatch) continue;
+
+    blocks.push({
+      headerRow: rowIndex,
+      month: weeklyOSMonthNameToNumber_(monthMatch[1]),
+      year: Number(yearMatch[1])
+    });
+  }
+
+  blocks.forEach(function (block, index) {
+    block.endRow = index < blocks.length - 1
+      ? blocks[index + 1].headerRow - 1
+      : displayValues.length - 1;
+  });
+
+  return blocks;
+}
+
+function weeklyOSFindNextDateRowFallback_(displayValues, currentRow, columnIndex, endRow) {
+  for (let rowIndex = currentRow + 1; rowIndex <= endRow; rowIndex++) {
+    const value = weeklyOSNormalizeText_(displayValues[rowIndex][columnIndex]);
+    if (/^\d{1,2}$/.test(value)) return rowIndex;
+  }
+
+  return null;
+}
+
+function testWeeklyOSNewActorCalendarSource() {
+  const draft = weeklyOSCreateWeekDraft_(weeklyOSNextMonday_());
+  const result = weeklyOSReadNewActorCalendars_(draft);
+
+  const summary = {
+    result: result,
+    days: draft.days.map(function (day) {
+      return {
+        date: day.date,
+        rehearsals: day.rehearsals.map(function (item) {
+          return {
+            title: item.title,
+            startTime: item.startTime,
+            endTime: item.endTime,
+            called: item.called,
+            stageManagement: item.stageManagement,
+            rehearsalPianist: item.rehearsalPianist,
+            location: item.location,
+            requiresReview: item.requiresReview,
+            source: item.source
+          };
+        }),
+        meetings: day.meetings,
+        notes: day.notes
+      };
+    })
+  };
+
+  Logger.log("WEEKLYOS NEW ACTOR CALENDAR SOURCE");
+  Logger.log(JSON.stringify(summary, null, 2));
+
+  SpreadsheetApp.getUi().alert([
+    "New Actor Calendar test complete.",
+    "",
+    "Calendar sheets read: " + result.sheetsRead,
+    "Rehearsals found: " + result.rehearsals,
+    "Meetings found: " + result.meetings,
+    "Notes found: " + result.notes,
+    "",
+    "Open the execution log for details."
+  ].join("\n"));
+
+  return summary;
+}
