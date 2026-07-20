@@ -1,0 +1,226 @@
+/*************************************************
+ * 25 WEEKLYOS - CACHE
+ * Version: 2.0.0
+ * Purpose:
+ * - Cache parsed weekly day data for Prep
+ * - Avoid reading Weekly tab during Prep when cached
+ *************************************************/
+
+function WeeklyCacheOS() {
+  return {
+    getPrepDay: function (targetDate, targetDay, targetMonth, targetDayNum) {
+      return weeklyCacheOSGetPrepDay_(targetDate, targetDay, targetMonth, targetDayNum);
+    },
+
+    getDay: function (targetDate, targetDay, targetMonth, targetDayNum) {
+      return weeklyCacheOSGetDayLocation_(targetDate, targetDay, targetMonth, targetDayNum);
+    },
+
+    clear: function () {
+      const props = PropertiesService.getDocumentProperties();
+      props.deleteProperty("WEEKLY_CACHE_OS_DAY_MAP");
+      props.deleteProperty("WEEKLY_CACHE_OS_PREP_DAY_MAP");
+    }
+  };
+}
+
+function weeklyCacheOSGetPrepDay_(targetDate, targetDay, targetMonth, targetDayNum) {
+  const tz = Session.getScriptTimeZone();
+  const dateKey = Utilities.formatDate(targetDate, tz, "yyyy-MM-dd");
+
+  const props = PropertiesService.getDocumentProperties();
+  const raw = props.getProperty("WEEKLY_CACHE_OS_PREP_DAY_MAP");
+
+  let cache = {};
+  if (raw) {
+    try {
+      cache = JSON.parse(raw);
+    } catch (err) {
+      cache = {};
+    }
+  }
+
+  if (cache[dateKey]) {
+    cache[dateKey].source = "weekly-prep-cache";
+    return cache[dateKey];
+  }
+
+  const built = weeklyCacheOSBuildPrepDay_(targetDate, targetDay, targetMonth, targetDayNum);
+
+  if (built) {
+    cache[dateKey] = built;
+    props.setProperty("WEEKLY_CACHE_OS_PREP_DAY_MAP", JSON.stringify(cache));
+    built.source = "weekly-prep-built";
+  }
+
+  return built;
+}
+
+function weeklyCacheOSBuildPrepDay_(targetDate, targetDay, targetMonth, targetDayNum) {
+  const location = weeklyCacheOSGetDayLocation_(targetDate, targetDay, targetMonth, targetDayNum);
+  if (!location) return null;
+
+  const values = location.values;
+  const dayStart = location.dayStart;
+  const dayEnd = findDayEnd_(values, dayStart);
+
+  const performances = findPerformancesForWeeklyDay_(values, dayStart, dayEnd);
+
+  performances.forEach(perf => {
+    perf.conductor = findConductorForPerformanceFromWeekly_(
+      values,
+      dayStart,
+      dayEnd,
+      perf.number
+    );
+  });
+
+  return {
+    cachedAt: new Date().toISOString(),
+    sheetName: location.sheet.getName(),
+    dayStart: dayStart,
+    dayEnd: dayEnd,
+    notes: getNotesAndHolidayFromWeeklyDay_(values, dayStart, dayEnd),
+    performances: performances,
+    castOuts: getWeeklyCastOuts_(values, dayStart, dayEnd),
+    locationSource: location.source || ""
+  };
+}
+
+function weeklyCacheOSGetDayLocation_(targetDate, targetDay, targetMonth, targetDayNum) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const tz = Session.getScriptTimeZone();
+  const dateKey = Utilities.formatDate(targetDate, tz, "yyyy-MM-dd");
+
+  const props = PropertiesService.getDocumentProperties();
+  const raw = props.getProperty("WEEKLY_CACHE_OS_DAY_MAP");
+
+  let cache = {};
+  if (raw) {
+    try {
+      cache = JSON.parse(raw);
+    } catch (err) {
+      cache = {};
+    }
+  }
+
+  if (cache[dateKey]) {
+    const sheet = ss.getSheetByName(cache[dateKey].sheetName);
+
+    if (sheet) {
+      const values = sheet.getRange(1, 1, sheet.getLastRow(), 5).getDisplayValues();
+
+      return {
+        sheet: sheet,
+        values: values,
+        dayStart: cache[dateKey].dayStart,
+        source: "weekly-location-cache"
+      };
+    }
+  }
+
+  const found = findWeeklySheetAndDayRow_FAST_(targetDate, targetDay, targetMonth, targetDayNum);
+
+  if (found) {
+    cache[dateKey] = {
+      sheetName: found.sheet.getName(),
+      dayStart: found.dayStart,
+      cachedAt: new Date().toISOString()
+    };
+
+    props.setProperty("WEEKLY_CACHE_OS_DAY_MAP", JSON.stringify(cache));
+  }
+
+  return found;
+}
+
+function findWeeklySheetAndDayRow_(targetDate, targetDay, targetMonth, targetDayNum) {
+  if (targetDate instanceof Date) {
+    return WeeklyCacheOS().getDay(targetDate, targetDay, targetMonth, targetDayNum);
+  }
+
+  return findWeeklySheetAndDayRow_UNCACHED_(targetDay, targetMonth, targetDayNum);
+}
+
+function findWeeklySheetAndDayRow_FAST_(targetDate, targetDay, targetMonth, targetDayNum) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const expectedName = buildWeeklyScheduleTabNameForDate_(targetDate);
+  const sheet = ss.getSheetByName(expectedName);
+
+  if (!sheet) {
+    return findWeeklySheetAndDayRow_UNCACHED_(targetDay, targetMonth, targetDayNum);
+  }
+
+  const values = sheet.getRange(1, 1, sheet.getLastRow(), 5).getDisplayValues();
+
+  for (let r = 0; r < values.length; r++) {
+    const rowText = normalizeWeeklyText_(values[r].slice(0, 5).join(" "));
+
+    if (
+      rowText.includes(targetDay) &&
+      rowText.includes(targetMonth) &&
+      rowText.includes(targetDayNum)
+    ) {
+      return {
+        sheet: sheet,
+        values: values,
+        dayStart: r,
+        source: "weekly-fast-tab-name"
+      };
+    }
+  }
+
+  return null;
+}
+
+function buildWeeklyScheduleTabNameForDate_(targetDate) {
+  const tz = Session.getScriptTimeZone();
+
+  const d = new Date(targetDate);
+  const day = d.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+
+  const monday = new Date(d);
+  monday.setDate(d.getDate() + diffToMonday);
+
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+
+  return "Weekly Schedule Mon " +
+    Utilities.formatDate(monday, tz, "M.d.yy") +
+    " - Sun " +
+    Utilities.formatDate(sunday, tz, "M.d.yy");
+}
+
+function findWeeklySheetAndDayRow_UNCACHED_(targetDay, targetMonth, targetDayNum) {
+  const sheets = SpreadsheetApp.getActiveSpreadsheet().getSheets()
+    .filter(sheet => sheet.getName().toLowerCase().includes("weekly schedule"));
+
+  for (const sheet of sheets) {
+    const values = sheet.getRange(1, 1, sheet.getLastRow(), 5).getDisplayValues();
+
+    for (let r = 0; r < values.length; r++) {
+      const rowText = normalizeWeeklyText_(values[r].slice(0, 5).join(" "));
+
+      if (
+        rowText.includes(targetDay) &&
+        rowText.includes(targetMonth) &&
+        rowText.includes(targetDayNum)
+      ) {
+        return {
+          sheet: sheet,
+          values: values,
+          dayStart: r,
+          source: "weekly-uncached-fallback"
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function refreshWeeklyCacheOS() {
+  WeeklyCacheOS().clear();
+  SpreadsheetApp.getUi().alert("Weekly cache cleared. It will rebuild on next Prep.");
+}
