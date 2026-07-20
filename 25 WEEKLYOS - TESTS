@@ -1,0 +1,2523 @@
+/*************************************************
+ * 25 WEEKLYOS - TESTS
+ * Version: 0.3.0
+ * Status: ACTIVE DEVELOPMENT
+ *
+ * Safe diagnostics for WeeklyOS.
+ *
+ * These tests do not generate or alter a finished
+ * Weekly Schedule tab.
+ *************************************************/
+
+
+/*************************************************
+ * TEST 1 — SYSTEM CHECK
+ *
+ * Run this first.
+ *
+ * Confirms:
+ * - Required WeeklyOS functions exist
+ * - Required source sheets exist
+ * - Configuration is readable
+ * - HTML file can be found
+ *************************************************/
+
+function weeklyOSTest01SystemCheck() {
+  const config =
+    weeklyOSGetConfig_();
+
+  const functionChecks = [
+    {
+      name:
+        "WeeklyOS",
+
+      exists:
+        typeof WeeklyOS ===
+        "function"
+    },
+
+    {
+      name:
+        "weeklyOSCreateWeekDraft_",
+
+      exists:
+        typeof weeklyOSCreateWeekDraft_ ===
+        "function"
+    },
+
+    {
+      name:
+        "weeklyOSBuildDraft",
+
+      exists:
+        typeof weeklyOSBuildDraft ===
+        "function"
+    },
+
+    {
+      name:
+        "weeklyOSRefreshDraft",
+
+      exists:
+        typeof weeklyOSRefreshDraft ===
+        "function"
+    },
+
+    {
+      name:
+        "weeklyOSSaveDraft",
+
+      exists:
+        typeof weeklyOSSaveDraft ===
+        "function"
+    },
+
+    {
+      name:
+        "weeklyOSGetDraft",
+
+      exists:
+        typeof weeklyOSGetDraft ===
+        "function"
+    },
+
+    {
+      name:
+        "weeklyOSValidateDraft",
+
+      exists:
+        typeof weeklyOSValidateDraft ===
+        "function"
+    },
+
+    {
+      name:
+        "weeklyOSOpenBuilder",
+
+      exists:
+        typeof weeklyOSOpenBuilder ===
+        "function"
+    }
+  ];
+
+  const sheetChecks = [
+    {
+      key:
+        "expandedCalendar",
+
+      configuredName:
+        config.sheets
+          .expandedCalendar
+    },
+
+    {
+      key:
+        "productionCalendar",
+
+      configuredName:
+        config.sheets
+          .productionCalendar
+    },
+
+    {
+      key:
+        "pdVacationTracker",
+
+      configuredName:
+        config.sheets
+          .pdVacationTracker
+    },
+
+    {
+      key:
+        "crewOuts",
+
+      configuredName:
+        config.sheets
+          .crewOuts
+    },
+
+    {
+      key:
+        "contactSheet",
+
+      configuredName:
+        config.sheets
+          .contactSheet
+    },
+
+    {
+      key:
+        "weeklyTemplate",
+
+      configuredName:
+        config.sheets
+          .weeklyTemplate
+    }
+  ].map(
+    function (item) {
+      const sheet =
+        weeklyOSGetSheetSafe_(
+          item.configuredName
+        );
+
+      return {
+        key:
+          item.key,
+
+        configuredName:
+          item.configuredName,
+
+        found:
+          Boolean(sheet),
+
+        rows:
+          sheet
+            ? sheet.getLastRow()
+            : 0,
+
+        columns:
+          sheet
+            ? sheet.getLastColumn()
+            : 0
+      };
+    }
+  );
+
+  let htmlFound = false;
+  let htmlError = "";
+
+  try {
+    HtmlService
+      .createTemplateFromFile(
+        "WeeklyOS Builder"
+      );
+
+    htmlFound = true;
+  } catch (error) {
+    htmlError =
+      error.message;
+  }
+
+  const result = {
+    test:
+      "WeeklyOS System Check",
+
+    version:
+      config.version,
+
+    functionChecks:
+      functionChecks,
+
+    sheetChecks:
+      sheetChecks,
+
+    html: {
+      fileName:
+        "WeeklyOS Builder",
+
+      found:
+        htmlFound,
+
+      error:
+        htmlError
+    },
+
+    passed:
+      functionChecks.every(
+        function (item) {
+          return item.exists;
+        }
+      ) &&
+      sheetChecks
+        .filter(
+          function (item) {
+            return (
+              item.key ===
+                "expandedCalendar" ||
+              item.key ===
+                "productionCalendar" ||
+              item.key ===
+                "pdVacationTracker" ||
+              item.key ===
+                "crewOuts" ||
+              item.key ===
+                "contactSheet"
+            );
+          }
+        )
+        .every(
+          function (item) {
+            return item.found;
+          }
+        ) &&
+      htmlFound
+  };
+
+  weeklyOSTestLog_(
+    result
+  );
+
+  return result;
+}
+
+
+/*************************************************
+ * TEST 2 — CREATE EMPTY WEEKMODEL
+ *
+ * Does not read source sheets or save anything.
+ *
+ * Confirms the model creates:
+ * - Monday through Sunday
+ * - All expected arrays
+ * - Valid week dates
+ *************************************************/
+
+function weeklyOSTest02CreateEmptyModel() {
+  const draft =
+    weeklyOSCreateWeekDraft_(
+      weeklyOSNextMonday_()
+    );
+
+  const result = {
+    test:
+      "Create Empty WeekModel",
+
+    draftId:
+      draft.id,
+
+    schemaVersion:
+      draft.schemaVersion,
+
+    weekStart:
+      draft.weekStart,
+
+    weekEnd:
+      draft.weekEnd,
+
+    dayCount:
+      draft.days.length,
+
+    days:
+      draft.days.map(
+        function (day) {
+          return {
+            date:
+              day.date,
+
+            dayName:
+              day.dayName,
+
+            performances:
+              day.performances.length,
+
+            rehearsals:
+              day.rehearsals.length,
+
+            meetings:
+              day.meetings.length,
+
+            workCalls:
+              day.workCalls.length,
+
+            putIns:
+              day.putIns.length,
+
+            companyEvents:
+              day.companyEvents.length,
+
+            castOuts:
+              day.castOuts.length,
+
+            crewOuts:
+              day.crewOuts.length,
+
+            pt:
+              day.pt.length,
+
+            holidays:
+              day.holidays.length,
+
+            notes:
+              day.notes.length
+          };
+        }
+      ),
+
+    passed:
+      draft.days.length === 7 &&
+      draft.days.every(
+        function (day) {
+          return (
+            Array.isArray(
+              day.performances
+            ) &&
+            Array.isArray(
+              day.rehearsals
+            ) &&
+            Array.isArray(
+              day.companyEvents
+            ) &&
+            Array.isArray(
+              day.castOuts
+            ) &&
+            Array.isArray(
+              day.crewOuts
+            ) &&
+            Array.isArray(
+              day.pt
+            )
+          );
+        }
+      )
+  };
+
+  weeklyOSTestLog_(
+    result
+  );
+
+  return result;
+}
+
+
+/*************************************************
+ * TEST 3 — CONTACT SHEET INDEX
+ *
+ * Reads Contact Sheet only.
+ *
+ * Reports:
+ * - Detected header row
+ * - Detected columns
+ * - Number of people indexed
+ * - Sample records
+ *************************************************/
+
+function weeklyOSTest03ContactSheetReader() {
+  const config =
+    weeklyOSGetConfig_();
+
+  const sheet =
+    weeklyOSAssertSheet_(
+      config.sheets
+        .contactSheet
+    );
+
+  const values =
+    sheet
+      .getDataRange()
+      .getDisplayValues();
+
+  const headers =
+    weeklyOSFindContactSheetHeaders_(
+      values
+    );
+
+  const draft =
+    weeklyOSCreateWeekDraft_(
+      weeklyOSNextMonday_()
+    );
+
+  const peopleIndex =
+    weeklyOSReadContactSheet_(
+      draft
+    );
+
+  const result = {
+    test:
+      "Contact Sheet Reader",
+
+    sheet:
+      sheet.getName(),
+
+    detectedHeaderRow:
+      headers.headerRow + 1,
+
+    columns: {
+      name:
+        headers.nameColumn + 1,
+
+      title:
+        headers.titleColumn >= 0
+          ? headers.titleColumn + 1
+          : null,
+
+      department:
+        headers.departmentColumn >= 0
+          ? headers.departmentColumn + 1
+          : null,
+
+      email:
+        headers.emailColumn >= 0
+          ? headers.emailColumn + 1
+          : null
+    },
+
+    indexedPeople:
+      peopleIndex.all.length,
+
+    samples:
+      peopleIndex.all
+        .slice(0, 15),
+
+    sourceStatus:
+      draft.sourceStatus
+        .contactSheet,
+
+    passed:
+      peopleIndex.all.length > 0
+  };
+
+  weeklyOSTestLog_(
+    result
+  );
+
+  return result;
+}
+
+
+/*************************************************
+ * TEST 4 — EXPANDED CALENDAR READER
+ *
+ * Reads Expanded Calendar only.
+ *
+ * Does not save a draft.
+ *************************************************/
+
+function weeklyOSTest04ExpandedCalendarReader() {
+  const draft =
+    weeklyOSCreateWeekDraft_(
+      weeklyOSNextMonday_()
+    );
+
+  weeklyOSReadExpandedCalendar_(
+    draft
+  );
+
+  const result = {
+    test:
+      "Expanded Calendar Reader",
+
+    weekStart:
+      draft.weekStart,
+
+    weekEnd:
+      draft.weekEnd,
+
+    sourceStatus:
+      draft.sourceStatus
+        .expandedCalendar,
+
+    days:
+      draft.days.map(
+        function (day) {
+          return {
+            date:
+              day.date,
+
+            performances:
+              day.performances.map(
+                function (
+                  performance
+                ) {
+                  return {
+                    number:
+                      performance
+                        .performanceNumber,
+
+                    label:
+                      performance.label,
+
+                    time:
+                      performance.time,
+
+                    showType:
+                      performance.showType,
+
+                    conductor:
+                      performance.conductor,
+
+                    guestSpeller:
+                      performance
+                        .guestSpeller,
+
+                    sourceRow:
+                      performance.sourceRow
+                  };
+                }
+              ),
+
+            rehearsals:
+              day.rehearsals.map(
+                function (
+                  rehearsal
+                ) {
+                  return {
+                    type:
+                      rehearsal.type,
+
+                    title:
+                      rehearsal.title,
+
+                    startTime:
+                      rehearsal.startTime,
+
+                    endTime:
+                      rehearsal.endTime,
+
+                    location:
+                      rehearsal.location,
+
+                    requiresReview:
+                      rehearsal
+                        .requiresReview,
+
+                    sourceRow:
+                      rehearsal.sourceRow
+                  };
+                }
+              ),
+
+            workCalls:
+              day.workCalls,
+
+            putIns:
+              day.putIns,
+
+            pt:
+              day.pt,
+
+            dayOff:
+              day.dayOff
+          };
+        }
+      ),
+
+    passed:
+      draft.sourceStatus
+        .expandedCalendar
+        .found
+  };
+
+  weeklyOSTestLog_(
+    result
+  );
+
+  return result;
+}
+
+
+/*************************************************
+ * TEST 5 — PRODUCTION CALENDAR READER
+ *
+ * Reads Production Calendar and Contact Sheet.
+ *
+ * Does not save a draft.
+ *************************************************/
+
+function weeklyOSTest05ProductionCalendarReader() {
+  const draft =
+    weeklyOSCreateWeekDraft_(
+      weeklyOSNextMonday_()
+    );
+
+  const peopleIndex =
+    weeklyOSReadContactSheet_(
+      draft
+    );
+
+  weeklyOSReadProductionCalendar_(
+    draft,
+    peopleIndex
+  );
+
+  const result = {
+    test:
+      "Production Calendar Reader",
+
+    weekStart:
+      draft.weekStart,
+
+    weekEnd:
+      draft.weekEnd,
+
+    sourceStatus:
+      draft.sourceStatus
+        .productionCalendar,
+
+    days:
+      draft.days.map(
+        function (day) {
+          return {
+            date:
+              day.date,
+
+            castOuts:
+              day.castOuts,
+
+            companyEvents:
+              day.companyEvents,
+
+            holidays:
+              day.holidays,
+
+            notes:
+              day.notes
+          };
+        }
+      ),
+
+    passed:
+      draft.sourceStatus
+        .productionCalendar
+        .found
+  };
+
+  weeklyOSTestLog_(
+    result
+  );
+
+  return result;
+}
+
+
+/*************************************************
+ * TEST 6 — PD / VACATION TRACKER READER
+ *
+ * Reads:
+ * - Contact Sheet
+ * - Production Calendar
+ * - PD/Vacation Tracker
+ *
+ * Shows whether tracker data enriches existing
+ * Production Calendar cast outs.
+ *************************************************/
+
+function weeklyOSTest06PdVacationReader() {
+  const draft =
+    weeklyOSCreateWeekDraft_(
+      weeklyOSNextMonday_()
+    );
+
+  const peopleIndex =
+    weeklyOSReadContactSheet_(
+      draft
+    );
+
+  weeklyOSReadProductionCalendar_(
+    draft,
+    peopleIndex
+  );
+
+  weeklyOSReadPdVacationTracker_(
+    draft,
+    peopleIndex
+  );
+
+  weeklyOSDeduplicateDraftSources_(
+    draft
+  );
+
+  const result = {
+    test:
+      "PD/Vacation Tracker Reader",
+
+    sourceStatus:
+      draft.sourceStatus
+        .pdVacationTracker,
+
+    castOuts:
+      draft.days.map(
+        function (day) {
+          return {
+            date:
+              day.date,
+
+            outs:
+              day.castOuts.map(
+                function (item) {
+                  return {
+                    person:
+                      item.person,
+
+                    role:
+                      item.role,
+
+                    type:
+                      item.type,
+
+                    reason:
+                      item.reason,
+
+                    approvalStatus:
+                      item
+                        .approvalStatus,
+
+                    numberOfPerformances:
+                      item
+                        .numberOfPerformances,
+
+                    sources:
+                      item.sources,
+
+                    sourceRows:
+                      item.sourceRows
+                  };
+                }
+              )
+          };
+        }
+      ),
+
+    passed:
+      draft.sourceStatus
+        .pdVacationTracker
+        .found
+  };
+
+  weeklyOSTestLog_(
+    result
+  );
+
+  return result;
+}
+
+
+/*************************************************
+ * TEST 7 — CREW OUTS READER
+ *
+ * Reads:
+ * - Contact Sheet
+ * - Crew Outs
+ *
+ * Does not save anything.
+ *************************************************/
+
+function weeklyOSTest07CrewOutsReader() {
+  const draft =
+    weeklyOSCreateWeekDraft_(
+      weeklyOSNextMonday_()
+    );
+
+  const peopleIndex =
+    weeklyOSReadContactSheet_(
+      draft
+    );
+
+  weeklyOSReadCrewOuts_(
+    draft,
+    peopleIndex
+  );
+
+  const result = {
+    test:
+      "Crew Outs Reader",
+
+    sourceStatus:
+      draft.sourceStatus
+        .crewOuts,
+
+    crewOuts:
+      draft.days.map(
+        function (day) {
+          return {
+            date:
+              day.date,
+
+            outs:
+              day.crewOuts
+          };
+        }
+      ),
+
+    passed:
+      draft.sourceStatus
+        .crewOuts
+        .found
+  };
+
+  weeklyOSTestLog_(
+    result
+  );
+
+  return result;
+}
+
+
+/*************************************************
+ * TEST 8 — FULL DRAFT BUILD
+ *
+ * This is the first test that saves a real
+ * WeeklyOS working draft.
+ *
+ * It does not create a finished weekly tab.
+ *************************************************/
+
+function weeklyOSTest08BuildFullDraft() {
+  const draft =
+    weeklyOSBuildDraft(
+      weeklyOSNextMonday_()
+    );
+
+  const result = {
+    test:
+      "Build Full WeeklyOS Draft",
+
+    draftId:
+      draft.id,
+
+    revision:
+      draft.revision,
+
+    schemaVersion:
+      draft.schemaVersion,
+
+    weekStart:
+      draft.weekStart,
+
+    weekEnd:
+      draft.weekEnd,
+
+    sourceStatus:
+      draft.sourceStatus,
+
+    summary:
+      weeklyOSBuildDraftSummary_(
+        draft
+      ),
+
+    observations:
+      draft.observations,
+
+    validation:
+      {
+        isValid:
+          draft.validation
+            .isValid,
+
+        errors:
+          draft.validation
+            .errors,
+
+        warnings:
+          draft.validation
+            .warnings,
+
+        info:
+          draft.validation
+            .info
+      },
+
+    passed:
+      Boolean(
+        draft.id &&
+        draft.days.length === 7
+      )
+  };
+
+  weeklyOSTestLog_(
+    result
+  );
+
+  return result;
+}
+
+
+/*************************************************
+ * TEST 9 — STORAGE
+ *
+ * Confirms:
+ * - Current draft can be read back
+ * - Draft history sheet exists
+ * - Revision history is available
+ *************************************************/
+
+function weeklyOSTest09Storage() {
+  let draft =
+    weeklyOSGetDraft();
+
+  if (!draft) {
+    draft =
+      weeklyOSBuildDraft(
+        weeklyOSNextMonday_()
+      );
+  }
+
+  const loadedDraft =
+    weeklyOSGetDraft(
+      draft.weekStart
+    );
+
+  const history =
+    weeklyOSGetDraftHistory_(
+      draft.weekStart
+    );
+
+  const config =
+    weeklyOSGetConfig_();
+
+  const historySheet =
+    weeklyOSGetSheetSafe_(
+      config.sheets
+        .draftHistory
+    );
+
+  const result = {
+    test:
+      "WeeklyOS Storage",
+
+    savedDraftId:
+      draft.id,
+
+    loadedDraftId:
+      loadedDraft
+        ? loadedDraft.id
+        : null,
+
+    weekStart:
+      draft.weekStart,
+
+    historySheetFound:
+      Boolean(
+        historySheet
+      ),
+
+    historyRows:
+      history.length,
+
+    history:
+      history,
+
+    passed:
+      Boolean(
+        loadedDraft &&
+        loadedDraft.id ===
+          draft.id &&
+        historySheet
+      )
+  };
+
+  weeklyOSTestLog_(
+    result
+  );
+
+  return result;
+}
+
+
+/*************************************************
+ * TEST 10 — VALIDATION
+ *
+ * Validates the current saved draft.
+ *************************************************/
+
+function weeklyOSTest10Validation() {
+  let draft =
+    weeklyOSGetDraft();
+
+  if (!draft) {
+    draft =
+      weeklyOSBuildDraft(
+        weeklyOSNextMonday_()
+      );
+  }
+
+  const validation =
+    weeklyOSValidateDraft(
+      draft
+    );
+
+  const result = {
+    test:
+      "WeeklyOS Validation",
+
+    weekStart:
+      draft.weekStart,
+
+    isValid:
+      validation.isValid,
+
+    summary:
+      validation.summary,
+
+    errors:
+      validation.errors,
+
+    warnings:
+      validation.warnings,
+
+    info:
+      validation.info,
+
+    passed:
+      Boolean(
+        validation &&
+        Array.isArray(
+          validation.errors
+        ) &&
+        Array.isArray(
+          validation.warnings
+        )
+      )
+  };
+
+  weeklyOSTestLog_(
+    result
+  );
+
+  return result;
+}
+
+
+/*************************************************
+ * TEST 11 — HTML TEMPLATE EVALUATION
+ *
+ * Evaluates the HTML but does not open it.
+ *
+ * This catches:
+ * - Missing HTML file
+ * - Broken template variables
+ * - Server-side template errors
+ *************************************************/
+
+function weeklyOSTest11HtmlEvaluation() {
+  let draft =
+    weeklyOSGetDraft();
+
+  if (!draft) {
+    draft =
+      weeklyOSBuildDraft(
+        weeklyOSNextMonday_()
+      );
+  }
+
+  const template =
+    HtmlService
+      .createTemplateFromFile(
+        "WeeklyOS Builder"
+      );
+
+  template.initialDraftJson =
+    weeklyOSSafeJsonForHtml_(
+      draft
+    );
+
+  template.initialBootstrapJson =
+    weeklyOSSafeJsonForHtml_(
+      weeklyOSBuildUiBootstrap_(
+        draft
+      )
+    );
+
+  const evaluated =
+    template.evaluate();
+
+  const content =
+    evaluated.getContent();
+
+  const result = {
+    test:
+      "WeeklyOS HTML Evaluation",
+
+    htmlLength:
+      content.length,
+
+    containsWeeklyOS:
+      content.indexOf(
+        "WeeklyOS"
+      ) >= 0,
+
+    containsInitialDraft:
+      content.indexOf(
+        draft.id
+      ) >= 0,
+
+    passed:
+      content.length > 1000 &&
+      content.indexOf(
+        draft.id
+      ) >= 0
+  };
+
+  weeklyOSTestLog_(
+    result
+  );
+
+  return result;
+}
+
+
+/*************************************************
+ * TEST 12 — OPEN BUILDER
+ *
+ * Opens the actual WeeklyOS popup.
+ *
+ * Run only after Tests 1, 8, and 11 succeed.
+ *************************************************/
+
+function weeklyOSTest12OpenBuilder() {
+  weeklyOSOpenBuilder();
+
+  return {
+    test:
+      "Open WeeklyOS Builder",
+
+    passed:
+      true,
+
+    message:
+      "WeeklyOS Builder dialog requested."
+  };
+}
+
+
+/*************************************************
+ * RUN SAFE TEST SEQUENCE
+ *
+ * Runs Tests 1–11.
+ *
+ * It does not open the popup.
+ * It does not generate a Weekly Schedule tab.
+ *************************************************/
+
+function weeklyOSTestRunSafeSequence() {
+  const results = [];
+
+  const tests = [
+    weeklyOSTest01SystemCheck,
+    weeklyOSTest02CreateEmptyModel,
+    weeklyOSTest03ContactSheetReader,
+    weeklyOSTest04ExpandedCalendarReader,
+    weeklyOSTest05ProductionCalendarReader,
+    weeklyOSTest06PdVacationReader,
+    weeklyOSTest07CrewOutsReader,
+    weeklyOSTest08BuildFullDraft,
+    weeklyOSTest09Storage,
+    weeklyOSTest10Validation,
+    weeklyOSTest11HtmlEvaluation
+  ];
+
+  tests.forEach(
+    function (
+      testFunction
+    ) {
+      try {
+        results.push(
+          testFunction()
+        );
+      } catch (error) {
+        results.push({
+          test:
+            testFunction.name,
+
+          passed:
+            false,
+
+          error:
+            error.message,
+
+          stack:
+            error.stack || ""
+        });
+
+        console.error(
+          "[WeeklyOS Test Failure] " +
+          testFunction.name +
+          ": " +
+          error.message
+        );
+      }
+    }
+  );
+
+  const summary = {
+    test:
+      "WeeklyOS Safe Test Sequence",
+
+    total:
+      results.length,
+
+    passed:
+      results.filter(
+        function (item) {
+          return item.passed;
+        }
+      ).length,
+
+    failed:
+      results.filter(
+        function (item) {
+          return !item.passed;
+        }
+      ).length,
+
+    results:
+      results
+  };
+
+  weeklyOSTestLog_(
+    summary
+  );
+
+  return summary;
+}
+
+
+/*************************************************
+ * CURRENT DRAFT SUMMARY
+ *
+ * Convenient lightweight diagnostic after making
+ * source-sheet changes.
+ *************************************************/
+
+function weeklyOSTestCurrentDraftSummary() {
+  const draft =
+    weeklyOSGetDraft();
+
+  if (!draft) {
+    throw new Error(
+      "No current WeeklyOS draft exists."
+    );
+  }
+
+  const result = {
+    draftId:
+      draft.id,
+
+    revision:
+      draft.revision,
+
+    status:
+      draft.status,
+
+    weekStart:
+      draft.weekStart,
+
+    weekEnd:
+      draft.weekEnd,
+
+    sources:
+      draft.sourceStatus,
+
+    summary:
+      weeklyOSBuildDraftSummary_(
+        draft
+      ),
+
+    validationSummary:
+      draft.validation
+        ? draft.validation.summary
+        : null
+  };
+
+  weeklyOSTestLog_(
+    result
+  );
+
+  return result;
+}
+
+
+/*************************************************
+ * CLEAR TEST DRAFT
+ *
+ * Only clears the current WeeklyOS working draft.
+ * It does not delete the hidden history sheet.
+ *************************************************/
+
+function weeklyOSTestClearCurrentDraft() {
+  const draft =
+    weeklyOSGetDraft();
+
+  if (!draft) {
+    console.log(
+      "[WeeklyOS Test] No current draft to clear."
+    );
+
+    return {
+      cleared:
+        false,
+
+      reason:
+        "NO_DRAFT"
+    };
+  }
+
+  const result =
+    weeklyOSClearDraft(
+      draft.weekStart
+    );
+
+  weeklyOSTestLog_(
+    result
+  );
+
+  return result;
+}
+
+/*************************************************
+ * TEST 13 — TEMPLATE / COMPOSITION ENGINE
+ *
+ * Composes the saved WeekModel without writing
+ * anything to the Weekly Schedule template.
+ *
+ * Confirms:
+ * - Composer functions exist
+ * - Every day receives a template type
+ * - Timeline rows and notes are created
+ * - Guest Speller identities are removed
+ * - Put-In assignments are populated
+ * - New-actor styling metadata is available
+ *************************************************/
+
+function weeklyOSTest13TemplateEngine() {
+  let draft =
+    weeklyOSGetDraft();
+
+  if (!draft) {
+    draft =
+      weeklyOSBuildDraft(
+        weeklyOSNextMonday_()
+      );
+  }
+
+  const requiredFunctions = [
+    {
+      name:
+        "weeklyOSComposeDraft_",
+
+      exists:
+        typeof weeklyOSComposeDraft_ ===
+        "function"
+    },
+
+    {
+      name:
+        "weeklyOSComposeDay_",
+
+      exists:
+        typeof weeklyOSComposeDay_ ===
+        "function"
+    },
+
+    {
+      name:
+        "weeklyOSEnsurePutInAssignments_",
+
+      exists:
+        typeof weeklyOSEnsurePutInAssignments_ ===
+        "function"
+    },
+
+    {
+      name:
+        "weeklyOSCreateRenderRow_",
+
+      exists:
+        typeof weeklyOSCreateRenderRow_ ===
+        "function"
+    },
+
+    {
+      name:
+        "weeklyOSCreateRenderNote_",
+
+      exists:
+        typeof weeklyOSCreateRenderNote_ ===
+        "function"
+    }
+  ];
+
+  const missingFunctions =
+    requiredFunctions.filter(
+      function (item) {
+        return !item.exists;
+      }
+    );
+
+  if (missingFunctions.length) {
+    throw new Error(
+      "WeeklyOS composition test is missing required functions: " +
+      missingFunctions
+        .map(
+          function (item) {
+            return item.name;
+          }
+        )
+        .join(", ")
+    );
+  }
+
+  const composed =
+    weeklyOSComposeDraft_(
+      draft
+    );
+
+  const composedDays =
+    composed.composition &&
+    Array.isArray(
+      composed.composition.days
+    )
+      ? composed.composition.days
+      : [];
+
+  const dayResults =
+    composed.days.map(
+      function (day) {
+        const composedDay =
+          composedDays.find(
+            function (item) {
+              return (
+                item.date ===
+                day.date
+              );
+            }
+          ) || {};
+
+        const performances =
+          Array.isArray(
+            day.performances
+          )
+            ? day.performances
+            : [];
+
+        const putIns =
+          Array.isArray(
+            day.putIns
+          )
+            ? day.putIns
+            : [];
+
+        return {
+          date:
+            day.date,
+
+          templateType:
+            day.templateType ||
+            composedDay.templateType ||
+            "",
+
+          headerText:
+            day.compositionHeader ||
+            composedDay.headerText ||
+            "",
+
+          timelineRows:
+            Array.isArray(
+              day.timeline
+            )
+              ? day.timeline.length
+              : (
+                Array.isArray(
+                  composedDay.timeline
+                )
+                  ? composedDay
+                      .timeline
+                      .length
+                  : 0
+              ),
+
+          notes:
+            Array.isArray(
+              day.renderNotes
+            )
+              ? day.renderNotes.length
+              : (
+                Array.isArray(
+                  composedDay.notes
+                )
+                  ? composedDay
+                      .notes
+                      .length
+                  : 0
+              ),
+
+          hasNewActorContent:
+            Boolean(
+              day.rendering &&
+              day.rendering
+                .hasNewActorContent
+            ),
+
+          guestSpellerExposed:
+            performances.some(
+              function (
+                performance
+              ) {
+                return (
+                  performance
+                    .guestSpeller !==
+                  undefined
+                );
+              }
+            ),
+
+          putIns:
+            putIns.map(
+              function (putIn) {
+                return {
+                  title:
+                    putIn.title,
+
+                  assignments:
+                    Array.isArray(
+                      putIn.assignments
+                    )
+                      ? putIn
+                          .assignments
+                          .length
+                      : 0,
+
+                  newActors:
+                    Array.isArray(
+                      putIn.newActors
+                    )
+                      ? putIn
+                          .newActors
+                          .length
+                      : 0,
+
+                  hasNewActors:
+                    Boolean(
+                      putIn.hasNewActors
+                    )
+                };
+              }
+            )
+        };
+      }
+    );
+
+  const guestSpellerExposed =
+    dayResults.some(
+      function (day) {
+        return day
+          .guestSpellerExposed;
+      }
+    );
+
+  const missingTemplateTypes =
+    dayResults.filter(
+      function (day) {
+        return !day.templateType;
+      }
+    );
+
+  const result = {
+    test:
+      "WeeklyOS Template Engine",
+
+    weekStart:
+      composed.weekStart,
+
+    weekEnd:
+      composed.weekEnd,
+
+    requiredFunctions:
+      requiredFunctions,
+
+    compositionVersion:
+      composed.composition
+        ? composed.composition.version
+        : "",
+
+    days:
+      dayResults,
+
+    compositionSummary:
+      typeof weeklyOSBuildCompositionSummary_ ===
+        "function"
+        ? weeklyOSBuildCompositionSummary_(
+            composed
+          )
+        : null,
+
+    checks: {
+      sevenDays:
+        composed.days.length === 7,
+
+      allDaysComposed:
+        composedDays.length === 7,
+
+      allDaysHaveTemplateType:
+        missingTemplateTypes.length === 0,
+
+      guestSpellerPrivacy:
+        !guestSpellerExposed,
+
+      putInAssignmentsBuilt:
+        composed.days.every(
+          function (day) {
+            return (
+              !day.putIns.length ||
+              day.putIns.every(
+                function (putIn) {
+                  return (
+                    Array.isArray(
+                      putIn.assignments
+                    ) &&
+                    putIn.assignments
+                      .length > 0
+                  );
+                }
+              )
+            );
+          }
+        )
+    }
+  };
+
+  result.passed =
+    result.checks.sevenDays &&
+    result.checks.allDaysComposed &&
+    result.checks
+      .allDaysHaveTemplateType &&
+    result.checks
+      .guestSpellerPrivacy &&
+    result.checks
+      .putInAssignmentsBuilt;
+
+  weeklyOSTestLog_(
+    result
+  );
+
+  return result;
+}
+
+/*************************************************
+ * WEEKLYOS EMERGENCY REVIEW GENERATOR
+ *
+ * Temporary review output while the final WeeklyOS
+ * template generator is being completed.
+ *
+ * Creates a readable sheet from the current saved
+ * WeeklyOS draft.
+ *************************************************/
+
+function weeklyOSGenerateEmergencyReview() {
+  const ss =
+    SpreadsheetApp.getActiveSpreadsheet();
+
+  const draft =
+    weeklyOSGetDraft();
+
+  if (!draft) {
+    throw new Error(
+      "WeeklyOS could not find a saved draft."
+    );
+  }
+
+  /*
+   * Use the existing Composer when available.
+   * It already turns each day into timeline rows
+   * and review notes.
+   */
+  const output =
+    typeof weeklyOSComposeDraft_ === "function"
+      ? weeklyOSComposeDraft_(draft)
+      : weeklyOSDeepClone_(draft);
+
+  const weekStart =
+    weeklyOSFormatDate_(
+      draft.weekStart,
+      "M.d.yy"
+    );
+
+  const weekEnd =
+    weeklyOSFormatDate_(
+      draft.weekEnd,
+      "M.d.yy"
+    );
+
+  const sheetName =
+    "WeeklyOS REVIEW " +
+    weekStart +
+    " - " +
+    weekEnd;
+
+  const existing =
+    ss.getSheetByName(sheetName);
+
+  if (existing) {
+    ss.deleteSheet(existing);
+  }
+
+  const sheet =
+    ss.insertSheet(sheetName);
+
+  const rows = [];
+
+  rows.push([
+    "THE 25TH ANNUAL PUTNAM COUNTY SPELLING BEE",
+    "",
+    "",
+    ""
+  ]);
+
+  rows.push([
+    "WEEKLY SCHEDULE REVIEW",
+    weekStart + " – " + weekEnd,
+    "",
+    ""
+  ]);
+
+  rows.push([
+    "",
+    "",
+    "",
+    ""
+  ]);
+
+  const days =
+    Array.isArray(output.days)
+      ? output.days
+      : [];
+
+  days.forEach(function (day) {
+    const dateLabel =
+      day.dateLabel ||
+      weeklyOSFormatDate_(
+        day.date,
+        "EEEE, MMMM d"
+      );
+
+    const headline =
+      day.compositionHeader ||
+      buildEmergencyWeeklyHeadline_(day);
+
+    rows.push([
+      dateLabel,
+      headline,
+      "",
+      ""
+    ]);
+
+    const timeline =
+      Array.isArray(day.timeline)
+        ? day.timeline
+        : [];
+
+    if (timeline.length) {
+      timeline.forEach(function (item) {
+        rows.push([
+          "",
+          item.time || "",
+          item.activity || "",
+          item.called || ""
+        ]);
+      });
+    } else {
+      buildEmergencyTimelineRows_(
+        day
+      ).forEach(function (item) {
+        rows.push([
+          "",
+          item.time || "",
+          item.activity || "",
+          item.called || ""
+        ]);
+      });
+    }
+
+    const notes =
+      Array.isArray(day.renderNotes)
+        ? day.renderNotes
+        : buildEmergencyNotes_(day);
+
+    if (notes.length) {
+      rows.push([
+        "",
+        "NOTES",
+        "",
+        ""
+      ]);
+
+      notes.forEach(function (note) {
+        rows.push([
+          "",
+          "",
+          typeof note === "string"
+            ? note
+            : (
+              note.text ||
+              note.activity ||
+              ""
+            ),
+          ""
+        ]);
+      });
+    }
+
+    rows.push([
+      "",
+      "",
+      "",
+      ""
+    ]);
+  });
+
+  sheet
+    .getRange(
+      1,
+      1,
+      rows.length,
+      4
+    )
+    .setValues(rows);
+
+  /*
+   * General formatting.
+   */
+  sheet
+    .getDataRange()
+    .setFontFamily("Arial")
+    .setFontSize(10)
+    .setVerticalAlignment("top")
+    .setWrap(true);
+
+  sheet.setColumnWidth(1, 175);
+  sheet.setColumnWidth(2, 125);
+  sheet.setColumnWidth(3, 520);
+  sheet.setColumnWidth(4, 260);
+
+  sheet.setFrozenRows(2);
+
+  /*
+   * Top title rows.
+   */
+  sheet
+    .getRange("A1:D1")
+    .merge()
+    .setFontSize(15)
+    .setFontWeight("bold")
+    .setHorizontalAlignment("center");
+
+  sheet
+    .getRange("A2:D2")
+    .setFontWeight("bold");
+
+  /*
+   * Format each date/header and notes row.
+   */
+  for (
+    let row = 4;
+    row <= sheet.getLastRow();
+    row++
+  ) {
+    const colA =
+      String(
+        sheet
+          .getRange(row, 1)
+          .getDisplayValue() || ""
+      ).trim();
+
+    const colB =
+      String(
+        sheet
+          .getRange(row, 2)
+          .getDisplayValue() || ""
+      ).trim();
+
+    if (colA) {
+      sheet
+        .getRange(row, 1, 1, 4)
+        .setFontWeight("bold")
+        .setBackground("#f7f0d8")
+        .setBorder(
+          true,
+          true,
+          true,
+          true,
+          false,
+          false
+        );
+    }
+
+    if (colB === "NOTES") {
+      sheet
+        .getRange(row, 1, 1, 4)
+        .setFontWeight("bold")
+        .setBackground("#eeeeee");
+    }
+  }
+
+  sheet.activate();
+
+  SpreadsheetApp.flush();
+
+  SpreadsheetApp
+    .getUi()
+    .alert(
+      "WeeklyOS Review Created",
+      'Created "' +
+        sheetName +
+        '".\n\n' +
+        "This is a temporary review tab for your boss. " +
+        "It does not replace the final Weekly Schedule generator.",
+      SpreadsheetApp
+        .getUi()
+        .ButtonSet.OK
+    );
+
+  return {
+    ok: true,
+    sheetName: sheetName,
+    sheetId: sheet.getSheetId()
+  };
+}
+
+
+/*************************************************
+ * EMERGENCY HEADLINE FALLBACK
+ *************************************************/
+
+function buildEmergencyWeeklyHeadline_(day) {
+  if (day.dayOff) {
+    return (
+      day.dayOff.title ||
+      "AEA DAY OFF"
+    );
+  }
+
+  const parts = [];
+
+  (day.rehearsals || []).forEach(function (item) {
+    if (item.canceled) return;
+
+    parts.push(
+      [
+        item.title || "Rehearsal",
+        [
+          item.startTime,
+          item.endTime
+        ]
+          .filter(Boolean)
+          .join("–")
+      ]
+        .filter(Boolean)
+        .join(" — ")
+    );
+  });
+
+  (day.meetings || []).forEach(function (item) {
+    parts.push(
+      [
+        item.title || "Meeting",
+        [
+          item.startTime,
+          item.endTime
+        ]
+          .filter(Boolean)
+          .join("–")
+      ]
+        .filter(Boolean)
+        .join(" — ")
+    );
+  });
+
+  (day.workCalls || []).forEach(function (item) {
+    parts.push(
+      [
+        item.title || "Work Call",
+        [
+          item.startTime,
+          item.endTime
+        ]
+          .filter(Boolean)
+          .join("–")
+      ]
+        .filter(Boolean)
+        .join(" — ")
+    );
+  });
+
+  (day.putIns || []).forEach(function (item) {
+    parts.push(
+      [
+        item.title || "Put-In",
+        [
+          item.startTime,
+          item.endTime
+        ]
+          .filter(Boolean)
+          .join("–")
+      ]
+        .filter(Boolean)
+        .join(" — ")
+    );
+  });
+
+  (day.performances || []).forEach(function (item) {
+    parts.push(
+      [
+        item.performanceNumber
+          ? "PERFORMANCE #" +
+            item.performanceNumber
+          : (
+            item.label ||
+            "PERFORMANCE"
+          ),
+        item.time
+      ]
+        .filter(Boolean)
+        .join(" — ")
+    );
+  });
+
+  return parts.join(" + ");
+}
+
+
+/*************************************************
+ * EMERGENCY TIMELINE FALLBACK
+ *************************************************/
+
+function buildEmergencyTimelineRows_(day) {
+  const rows = [];
+
+  if (day.dayOff) {
+    rows.push({
+      time: "",
+      activity:
+        day.dayOff.title ||
+        "AEA DAY OFF",
+      called: ""
+    });
+
+    return rows;
+  }
+
+  (day.rehearsals || []).forEach(function (item) {
+    if (item.canceled) return;
+
+    rows.push({
+      time:
+        [
+          item.startTime,
+          item.endTime
+        ]
+          .filter(Boolean)
+          .join("–"),
+
+      activity:
+        item.title ||
+        "Rehearsal",
+
+      called:
+        (item.called || [])
+          .join(", ")
+    });
+  });
+
+  (day.meetings || []).forEach(function (item) {
+    rows.push({
+      time:
+        [
+          item.startTime,
+          item.endTime
+        ]
+          .filter(Boolean)
+          .join("–"),
+
+      activity:
+        item.title ||
+        "Meeting",
+
+      called:
+        (item.called || [])
+          .join(", ")
+    });
+  });
+
+  (day.workCalls || []).forEach(function (item) {
+    rows.push({
+      time:
+        [
+          item.startTime,
+          item.endTime
+        ]
+          .filter(Boolean)
+          .join("–"),
+
+      activity:
+        item.title ||
+        "Work Call",
+
+      called:
+        (item.called || [])
+          .join(", ")
+    });
+  });
+
+  (day.performances || []).forEach(function (performance) {
+    const lines = [];
+
+    lines.push(
+      performance.performanceNumber
+        ? "PERFORMANCE #" +
+          performance.performanceNumber
+        : (
+          performance.label ||
+          "PERFORMANCE"
+        )
+    );
+
+    if (performance.conductor) {
+      lines.push(
+        "Conductor = " +
+        performance.conductor
+      );
+    }
+
+    (day.castOuts || []).forEach(function (outItem) {
+      if (
+        typeof weeklyOSOutAppliesToPerformance_ ===
+          "function" &&
+        !weeklyOSOutAppliesToPerformance_(
+          outItem,
+          performance
+        )
+      ) {
+        return;
+      }
+
+      let line =
+        (outItem.person || "Cast member") +
+        " OUT";
+
+      if (outItem.role) {
+        line +=
+          ", " +
+          outItem.role;
+      }
+
+      if (outItem.coverage) {
+        line +=
+          " = " +
+          outItem.coverage;
+      }
+
+      lines.push(line);
+    });
+
+    rows.push({
+      time:
+        performance.time ||
+        "",
+
+      activity:
+        lines.join("\n"),
+
+      called: ""
+    });
+  });
+
+  return rows;
+}
+
+
+/*************************************************
+ * EMERGENCY NOTES FALLBACK
+ *************************************************/
+
+function buildEmergencyNotes_(day) {
+  const notes = [];
+
+  (day.crewOuts || []).forEach(function (item) {
+    let text =
+      "- " +
+      (item.person || "Crew member") +
+      " OUT";
+
+    if (item.coverage) {
+      text +=
+        ", " +
+        item.coverage +
+        " IN";
+    }
+
+    if (item.department) {
+      text +=
+        " (" +
+        item.department +
+        ")";
+    }
+
+    notes.push(text);
+  });
+
+  (day.pt || []).forEach(function (item) {
+    let text =
+      "- PT";
+
+    const time =
+      [
+        item.startTime,
+        item.endTime
+      ]
+        .filter(Boolean)
+        .join("–");
+
+    if (time) {
+      text += " " + time;
+    }
+
+    if (item.location) {
+      text +=
+        " (" +
+        item.location +
+        ")";
+    }
+
+    notes.push(text);
+  });
+
+  (day.notes || []).forEach(function (item) {
+    const text =
+      typeof item === "string"
+        ? item
+        : item.text;
+
+    if (text) {
+      notes.push(text);
+    }
+  });
+
+  return notes;
+}
+
+/*************************************************
+ * PROMOTE WEEKLYOS REVIEW TO REAL WEEKLY TAB
+ *
+ * Fast production bridge:
+ * - Finds the current WeeklyOS REVIEW tab
+ * - Copies it
+ * - Gives it the standard Weekly Schedule name
+ * - Places it beside Weekly Template
+ * - Sets B3 to the correct Monday
+ *
+ * The review tab remains as a backup.
+ *************************************************/
+
+function weeklyOSPromoteReviewToWeeklySchedule() {
+  const ss =
+    SpreadsheetApp.getActiveSpreadsheet();
+
+  const ui =
+    SpreadsheetApp.getUi();
+
+  const draft =
+    weeklyOSGetDraft();
+
+  if (!draft) {
+    throw new Error(
+      "WeeklyOS could not find the saved weekly draft."
+    );
+  }
+
+  const monday =
+    weeklyOSAsDate_(
+      draft.weekStart
+    );
+
+  const sunday =
+    weeklyOSAsDate_(
+      draft.weekEnd
+    );
+
+  if (!monday || !sunday) {
+    throw new Error(
+      "WeeklyOS could not determine the week dates."
+    );
+  }
+
+  const tz =
+    Session.getScriptTimeZone();
+
+  const reviewSheetName =
+    "WeeklyOS REVIEW " +
+    Utilities.formatDate(
+      monday,
+      tz,
+      "M.d.yy"
+    ) +
+    " - " +
+    Utilities.formatDate(
+      sunday,
+      tz,
+      "M.d.yy"
+    );
+
+  const finalSheetName =
+    "Weekly Schedule Mon " +
+    Utilities.formatDate(
+      monday,
+      tz,
+      "M.d.yy"
+    ) +
+    " - Sun " +
+    Utilities.formatDate(
+      sunday,
+      tz,
+      "M.d.yy"
+    );
+
+  const reviewSheet =
+    ss.getSheetByName(
+      reviewSheetName
+    );
+
+  if (!reviewSheet) {
+    throw new Error(
+      'Could not find "' +
+      reviewSheetName +
+      '". Run the WeeklyOS generator first.'
+    );
+  }
+
+  const existingFinal =
+    ss.getSheetByName(
+      finalSheetName
+    );
+
+  if (existingFinal) {
+    const response =
+      ui.alert(
+        "Replace Existing Weekly Schedule?",
+        '"' +
+          finalSheetName +
+          '" already exists.\n\n' +
+          "Replace it with the current WeeklyOS review output?",
+        ui.ButtonSet.YES_NO
+      );
+
+    if (
+      response !==
+      ui.Button.YES
+    ) {
+      return {
+        ok: false,
+        canceled: true
+      };
+    }
+
+    ss.deleteSheet(
+      existingFinal
+    );
+  }
+
+  /*
+   * Copy the working review output so the review tab
+   * remains available as a backup.
+   */
+  const finalSheet =
+    reviewSheet
+      .copyTo(ss)
+      .setName(
+        finalSheetName
+      );
+
+  /*
+   * Keep the standard Monday anchor available for
+   * Prep, Weekly Cache, and other StageOS workflows.
+   */
+  finalSheet
+    .getRange("B3")
+    .setValue(monday)
+    .setNumberFormat(
+      "mmmm d, yyyy"
+    );
+
+  /*
+   * Move the real Weekly Schedule beside the template.
+   */
+  const template =
+    ss.getSheetByName(
+      "Weekly Template"
+    );
+
+  ss.setActiveSheet(
+    finalSheet
+  );
+
+  if (template) {
+    ss.moveActiveSheet(
+      template.getIndex() + 1
+    );
+  }
+
+  /*
+   * Record the generated sheet on the draft.
+   */
+  draft.status =
+    "GENERATED";
+
+  draft.metadata =
+    draft.metadata || {};
+
+  draft.metadata.generatedSheetId =
+    finalSheet.getSheetId();
+
+  draft.metadata.generatedSheetName =
+    finalSheetName;
+
+  draft.metadata.generatedAt =
+    new Date().toISOString();
+
+  weeklyOSSaveDraft(
+    draft
+  );
+
+  /*
+   * Clear any old Weekly cache so Prep reads this
+   * newly generated schedule.
+   */
+  if (
+    typeof WeeklyCacheOS ===
+    "function"
+  ) {
+    try {
+      WeeklyCacheOS().clear();
+    } catch (error) {
+      console.log(
+        "Weekly cache clear skipped: " +
+        error.message
+      );
+    }
+  }
+
+  SpreadsheetApp.flush();
+
+  ui.alert(
+    "Weekly Schedule Created",
+    'Created "' +
+      finalSheetName +
+      '".\n\n' +
+      "This is now the active tab for next week.",
+    ui.ButtonSet.OK
+  );
+
+  return {
+    ok: true,
+    sheetName:
+      finalSheetName,
+    sheetId:
+      finalSheet.getSheetId()
+  };
+}
+
+
+/*************************************************
+ * TEST LOG HELPER
+ *************************************************/
+
+function weeklyOSTestLog_(
+  value
+) {
+  console.log(
+    JSON.stringify(
+      value,
+      null,
+      2
+    )
+  );
+}
