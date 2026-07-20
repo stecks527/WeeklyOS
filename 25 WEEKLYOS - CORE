@@ -1,0 +1,1001 @@
+/*************************************************
+ * 25 WEEKLYOS - CORE
+ * Version: 0.1.1
+ * Status: ACTIVE DEVELOPMENT
+ *
+ * Public API, configuration, shared utilities,
+ * date helpers, and menu actions for WeeklyOS.
+ *************************************************/
+
+
+/*************************************************
+ * PUBLIC API
+ *************************************************/
+
+function WeeklyOS() {
+  return {
+    version: "0.1.1",
+
+    openBuilder:
+      weeklyOSOpenBuilder,
+
+    buildDraft:
+      weeklyOSBuildDraft,
+
+    refreshDraft:
+      weeklyOSRefreshDraft,
+
+    getDraft:
+      weeklyOSGetDraft,
+
+    saveDraft:
+      weeklyOSSaveDraft,
+
+    validateDraft:
+      weeklyOSValidateDraft,
+
+    generate:
+      weeklyOSGenerateFromSavedDraft,
+
+    clearDraft:
+      weeklyOSClearDraft,
+
+    config:
+      weeklyOSGetConfig_()
+  };
+}
+
+
+/*************************************************
+ * CONFIGURATION
+ *************************************************/
+
+function weeklyOSGetConfig_() {
+  return {
+    version: "0.1.1",
+
+    sheets: {
+      expandedCalendar:
+        "Expanded Calendar",
+
+      productionCalendar:
+        "Production Cal w/Conflicts",
+
+      pdVacationTracker:
+        "PD/Vacation Tracker",
+
+      crewOuts:
+        "Crew Outs",
+
+      contactSheet:
+      "Contact Sheet",
+
+      weeklyTemplate:
+        "Weekly Template",
+
+      draftHistory:
+        "_WEEKLYOS_DRAFTS"
+    },
+
+    storage: {
+      draftPropertyPrefix:
+        "WEEKLYOS_DRAFT_",
+
+      currentDraftProperty:
+        "WEEKLYOS_CURRENT_DRAFT",
+
+      weeklyCacheKey:
+        "WeeklyCacheOS"
+    },
+
+    week: {
+      startDay:
+        1,
+
+      numberOfDays:
+        7
+    },
+
+    rehearsalDefaults: {
+      understudy: {
+        type:
+          "UNDERSTUDY",
+
+        title:
+          "Understudy Rehearsal",
+
+        location:
+          "Theatre",
+
+        called: [
+          "Team SM",
+          "NJ A.",
+          "Niani F.",
+          "+1 Props",
+          "+1 Rehearsal Pianist"
+        ],
+
+        goldDividerBeforePerformance:
+          true
+      },
+
+      newHire: {
+        type:
+          "NEW_HIRE",
+
+        title:
+          "New-Hire Rehearsal",
+
+        location:
+          "",
+
+        called:
+          [],
+
+        goldDividerBeforePerformance:
+          true
+      }
+    },
+
+    keywords: {
+      performance: [
+        "PERFORMANCE",
+        "MAT",
+        "MATINEE",
+        "EVE",
+        "EVENING"
+      ],
+
+      newHire: [
+        "START DATE",
+        "FIRST PERFORMANCE",
+        "NEW CAST",
+        "NEW HIRE",
+        "TRAINING",
+        "REHEARSING",
+        "WATCH SHOW",
+        "MEASUREMENTS",
+        "ONBOARDING"
+      ],
+
+      rehearsal: [
+        "REHEARSAL",
+        "UNDERSTUDY REH",
+        "BRUSH-UP",
+        "BRUSH UP",
+        "MUSIC REVIEW",
+        "DANCE REVIEW",
+        "PUT-IN",
+        "PUT IN"
+      ],
+
+      notable: [
+        "GUEST SPELLER",
+        "FIRST PERFORMANCE",
+        "FINAL PERFORMANCE",
+        "START DATE",
+        "RETURN",
+        "LOA",
+        "MLOA",
+        "PUT-IN",
+        "PUT IN",
+        "BROADWAY IN BRYANT PARK",
+        "WATCH SHOW"
+      ]
+    },
+
+    output: {
+      sheetNamePattern:
+        "Weekly Schedule Mon {{START}} - Sun {{END}}",
+
+      shortDateFormat:
+        "M.d.yy",
+
+      longDateFormat:
+        "EEEE, MMMM d, yyyy"
+    }
+  };
+}
+
+
+/*************************************************
+ * SPREADSHEET HELPERS
+ *************************************************/
+
+function weeklyOSGetSpreadsheet_() {
+  return SpreadsheetApp
+    .getActiveSpreadsheet();
+}
+
+
+function weeklyOSGetSheetSafe_(sheetName) {
+  if (!sheetName) {
+    return null;
+  }
+
+  return weeklyOSGetSpreadsheet_()
+    .getSheetByName(sheetName);
+}
+
+
+function weeklyOSAssertSheet_(sheetName) {
+  const sheet =
+    weeklyOSGetSheetSafe_(
+      sheetName
+    );
+
+  if (!sheet) {
+    throw new Error(
+      'WeeklyOS could not find the required sheet "' +
+      sheetName +
+      '".'
+    );
+  }
+
+  return sheet;
+}
+
+
+/*************************************************
+ * TEXT HELPERS
+ *************************************************/
+
+function weeklyOSNormalizeText_(value) {
+  return String(
+    value == null
+      ? ""
+      : value
+  )
+    .replace(
+      /\u00A0/g,
+      " "
+    )
+    .replace(
+      /\s+/g,
+      " "
+    )
+    .trim();
+}
+
+
+function weeklyOSUpper_(value) {
+  return weeklyOSNormalizeText_(
+    value
+  ).toUpperCase();
+}
+
+
+function weeklyOSContainsAnyKeyword_(
+  value,
+  keywords
+) {
+  const upper =
+    weeklyOSUpper_(
+      value
+    );
+
+  return (
+    Array.isArray(keywords)
+      ? keywords
+      : []
+  ).some(
+    function (keyword) {
+      return (
+        upper.indexOf(
+          weeklyOSUpper_(keyword)
+        ) >= 0
+      );
+    }
+  );
+}
+
+
+/*************************************************
+ * DATE HELPERS
+ *************************************************/
+
+function weeklyOSAsDate_(value) {
+  if (
+    value instanceof Date &&
+    !isNaN(value.getTime())
+  ) {
+    return new Date(
+      value.getTime()
+    );
+  }
+
+  if (
+    typeof value ===
+    "number"
+  ) {
+    const numericDate =
+      new Date(value);
+
+    if (
+      !isNaN(
+        numericDate.getTime()
+      )
+    ) {
+      return numericDate;
+    }
+  }
+
+  if (
+    typeof value ===
+      "string" &&
+    value.trim()
+  ) {
+    const text =
+      value.trim();
+
+    /*
+     * Parse YYYY-MM-DD as a local calendar date.
+     *
+     * new Date("2026-07-13") is treated as UTC,
+     * which can become July 12 in Eastern time.
+     */
+    const dateOnlyMatch =
+      text.match(
+        /^(\d{4})-(\d{2})-(\d{2})$/
+      );
+
+    if (dateOnlyMatch) {
+      const localDate =
+        new Date(
+          Number(dateOnlyMatch[1]),
+          Number(dateOnlyMatch[2]) - 1,
+          Number(dateOnlyMatch[3])
+        );
+
+      if (
+        !isNaN(
+          localDate.getTime()
+        )
+      ) {
+        return localDate;
+      }
+    }
+
+    const stringDate =
+      new Date(text);
+
+    if (
+      !isNaN(
+        stringDate.getTime()
+      )
+    ) {
+      return stringDate;
+    }
+  }
+
+  return null;
+}
+
+
+function weeklyOSStartOfDay_(value) {
+  const date =
+    weeklyOSAsDate_(
+      value
+    );
+
+  if (!date) {
+    return null;
+  }
+
+  date.setHours(
+    0,
+    0,
+    0,
+    0
+  );
+
+  return date;
+}
+
+
+function weeklyOSAddDays_(
+  value,
+  numberOfDays
+) {
+  const date =
+    weeklyOSStartOfDay_(
+      value
+    );
+
+  if (!date) {
+    return null;
+  }
+
+  date.setDate(
+    date.getDate() +
+    Number(
+      numberOfDays || 0
+    )
+  );
+
+  return date;
+}
+
+
+function weeklyOSFindMonday_(value) {
+  const date =
+    weeklyOSStartOfDay_(
+      value || new Date()
+    );
+
+  if (!date) {
+    throw new Error(
+      "WeeklyOS could not determine the Monday date."
+    );
+  }
+
+  const dayOfWeek =
+    date.getDay();
+
+  const difference =
+    dayOfWeek === 0
+      ? -6
+      : 1 - dayOfWeek;
+
+  date.setDate(
+    date.getDate() +
+    difference
+  );
+
+  return date;
+}
+
+
+function weeklyOSNextMonday_() {
+  const today =
+    weeklyOSStartOfDay_(
+      new Date()
+    );
+
+  const currentMonday =
+    weeklyOSFindMonday_(
+      today
+    );
+
+  if (
+    today.getTime() >
+    currentMonday.getTime()
+  ) {
+    return weeklyOSAddDays_(
+      currentMonday,
+      7
+    );
+  }
+
+  return currentMonday;
+}
+
+
+function weeklyOSDateKey_(value) {
+  const date =
+    weeklyOSAsDate_(
+      value
+    );
+
+  if (!date) {
+    return "";
+  }
+
+  return Utilities.formatDate(
+    date,
+    Session.getScriptTimeZone(),
+    "yyyy-MM-dd"
+  );
+}
+
+
+function weeklyOSFormatDate_(
+  value,
+  pattern
+) {
+  const date =
+    weeklyOSAsDate_(
+      value
+    );
+
+  if (!date) {
+    return "";
+  }
+
+  return Utilities.formatDate(
+    date,
+    Session.getScriptTimeZone(),
+    pattern ||
+      "EEEE, MMMM d, yyyy"
+  );
+}
+
+
+function weeklyOSDatesEqual_(
+  firstValue,
+  secondValue
+) {
+  return (
+    weeklyOSDateKey_(
+      firstValue
+    ) ===
+    weeklyOSDateKey_(
+      secondValue
+    )
+  );
+}
+
+
+function weeklyOSDateIsWithinRange_(
+  dateValue,
+  startValue,
+  endValue
+) {
+  const date =
+    weeklyOSStartOfDay_(
+      dateValue
+    );
+
+  const start =
+    weeklyOSStartOfDay_(
+      startValue
+    );
+
+  const end =
+    weeklyOSStartOfDay_(
+      endValue
+    );
+
+  if (
+    !date ||
+    !start ||
+    !end
+  ) {
+    return false;
+  }
+
+  return (
+    date.getTime() >=
+      start.getTime() &&
+    date.getTime() <=
+      end.getTime()
+  );
+}
+
+
+/*************************************************
+ * GENERIC UTILITIES
+ *************************************************/
+
+function weeklyOSNowIso_() {
+  return new Date()
+    .toISOString();
+}
+
+
+function weeklyOSUuid_() {
+  return Utilities
+    .getUuid();
+}
+
+
+function weeklyOSDeepClone_(value) {
+  if (
+    value === undefined
+  ) {
+    return undefined;
+  }
+
+  return JSON.parse(
+    JSON.stringify(value)
+  );
+}
+
+
+function weeklyOSUniqueStrings_(
+  values
+) {
+  const seen = {};
+
+  return (
+    Array.isArray(values)
+      ? values
+      : []
+  )
+    .map(
+      weeklyOSNormalizeText_
+    )
+    .filter(
+      function (value) {
+        if (!value) {
+          return false;
+        }
+
+        const key =
+          weeklyOSUpper_(
+            value
+          );
+
+        if (seen[key]) {
+          return false;
+        }
+
+        seen[key] = true;
+
+        return true;
+      }
+    );
+}
+
+
+function weeklyOSSafeJsonParse_(
+  value,
+  fallback
+) {
+  try {
+    return JSON.parse(
+      value
+    );
+  } catch (error) {
+    return fallback;
+  }
+}
+
+
+/*************************************************
+ * LOGGING
+ *************************************************/
+
+function weeklyOSLog_(
+  message,
+  payload
+) {
+  const prefix =
+    "[WeeklyOS] ";
+
+  if (
+    payload ===
+    undefined
+  ) {
+    console.log(
+      prefix +
+      message
+    );
+
+    return;
+  }
+
+  try {
+    console.log(
+      prefix +
+      message +
+      " " +
+      JSON.stringify(
+        payload
+      )
+    );
+  } catch (error) {
+    console.log(
+      prefix +
+      message +
+      " " +
+      String(payload)
+    );
+  }
+}
+
+
+/*************************************************
+ * CACHE
+ *************************************************/
+
+function weeklyOSClearWeeklyCache_() {
+  const config =
+    weeklyOSGetConfig_();
+
+  try {
+    CacheService
+      .getDocumentCache()
+      .remove(
+        config.storage
+          .weeklyCacheKey
+      );
+  } catch (error) {
+    weeklyOSLog_(
+      "Weekly cache could not be cleared.",
+      error.message
+    );
+  }
+}
+
+/*************************************************
+ * UI ASSIGNMENTOS BOOTSTRAP
+ *
+ * Supplies reusable role and department information
+ * to the WeeklyOS rehearsal editor.
+ *
+ * No employee names are hard-coded here.
+ *************************************************/
+
+function weeklyOSGetUiAssignmentBootstrap_() {
+  const fallback = {
+    available: false,
+    groups: [],
+    tracks: [],
+    peopleByTrack: {},
+    departments: {},
+    roleOptions: {
+      stageManagement: [],
+      creative: [],
+      music: [],
+      crew: []
+    }
+  };
+
+  if (
+    typeof AssignmentOS !==
+    "function"
+  ) {
+    return fallback;
+  }
+
+  try {
+    const assignment =
+      AssignmentOS();
+
+    const cached =
+      assignment.getCached() ||
+      {};
+
+    const departments =
+      assignment.getAllDepartments() ||
+      {};
+
+    return {
+      available: true,
+
+      groups:
+        cached.groups ||
+        assignment.getGroups() ||
+        [],
+
+      tracks:
+        cached.tracks ||
+        assignment.getTracks() ||
+        [],
+
+      peopleByTrack:
+        cached.peopleByTrack ||
+        assignment.getPeopleByTrack() ||
+        {},
+
+      departments:
+        departments,
+
+      roleOptions: {
+        stageManagement:
+          weeklyOSGetAssignmentRoleOptionsFromDepartments_(
+            departments,
+            [
+              "STAGE MANAGEMENT"
+            ]
+          ),
+
+        creative:
+          weeklyOSGetAssignmentRoleOptionsFromDepartments_(
+            departments,
+            [
+              "CREATIVE TEAM"
+            ]
+          ),
+
+        music:
+          weeklyOSGetAssignmentRoleOptionsFromDepartments_(
+            departments,
+            [
+              "MUSIC",
+              "BAND"
+            ]
+          ),
+
+        crew:
+          weeklyOSGetAssignmentCrewDepartmentOptions_(
+            departments
+          )
+      }
+    };
+
+  } catch (error) {
+    weeklyOSLog_(
+      "WeeklyOS could not load AssignmentOS data.",
+      {
+        message:
+          error.message
+      }
+    );
+
+    fallback.error =
+      error.message;
+
+    return fallback;
+  }
+}
+
+
+/*************************************************
+ * ROLE OPTIONS FROM CONTACT DEPARTMENTS
+ *************************************************/
+
+function weeklyOSGetAssignmentRoleOptionsFromDepartments_(
+  departments,
+  departmentNames
+) {
+  const options = [];
+
+  (
+    departmentNames || []
+  ).forEach(
+    function (departmentName) {
+      (
+        departments[
+          departmentName
+        ] || []
+      ).forEach(
+        function (person) {
+          const title =
+            weeklyOSNormalizeText_(
+              person.title
+            );
+
+          if (!title) {
+            return;
+          }
+
+          options.push({
+            key:
+              weeklyOSAssignmentRoleKey_(
+                title
+              ),
+
+            label:
+              title,
+
+            department:
+              departmentName
+          });
+        }
+      );
+    }
+  );
+
+  return weeklyOSDeduplicateAssignmentOptions_(
+    options
+  );
+}
+
+
+/*************************************************
+ * CREW DEPARTMENT OPTIONS
+ *************************************************/
+
+function weeklyOSGetAssignmentCrewDepartmentOptions_(
+  departments
+) {
+  const acceptedDepartments = [
+    "CREW",
+    "CARPENTRY",
+    "PROPS",
+    "ELECTRICS",
+    "SOUND",
+    "WARDROBE",
+    "WIGS",
+    "SCENIC"
+  ];
+
+  return acceptedDepartments
+    .filter(
+      function (departmentName) {
+        return Boolean(
+          departments[
+            departmentName
+          ]
+        );
+      }
+    )
+    .map(
+      function (departmentName) {
+        return {
+          key:
+            weeklyOSAssignmentRoleKey_(
+              departmentName
+            ),
+
+          label:
+            weeklyOSAssignmentDisplayLabel_(
+              departmentName
+            ),
+
+          department:
+            departmentName
+        };
+      }
+    );
+}
+
+
+/*************************************************
+ * DEDUPLICATE ROLE OPTIONS
+ *************************************************/
+
+function weeklyOSDeduplicateAssignmentOptions_(
+  options
+) {
+  const output = [];
+  const seen = {};
+
+  (
+    options || []
+  ).forEach(
+    function (option) {
+      if (
+        !option ||
+        !option.key ||
+        !option.label ||
+        seen[option.key]
+      ) {
+        return;
+      }
+
+      seen[option.key] =
+        true;
+
+      output.push(
+        option
+      );
+    }
+  );
+
+  output.sort(
+    function (first, second) {
+      return first.label.localeCompare(
+        second.label
+      );
+    }
+  );
+
+  return output;
+}
+
+
+/*************************************************
+ * ASSIGNMENT LABEL HELPERS
+ *************************************************/
+
+function weeklyOSAssignmentRoleKey_(
+  value
+) {
+  return weeklyOSNormalizeText_(
+    value
+  )
+    .toUpperCase()
+    .replace(/&/g, " AND ")
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
+}
+
+
+function weeklyOSAssignmentDisplayLabel_(
+  value
+) {
+  return weeklyOSNormalizeText_(
+    value
+  )
+    .toLowerCase()
+    .replace(
+      /\b\w/g,
+      function (character) {
+        return character.toUpperCase();
+      }
+    );
+}
