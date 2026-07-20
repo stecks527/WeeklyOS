@@ -1,0 +1,2413 @@
+/*************************************************
+ * 25 WEEKLYOS - VALIDATION
+ * Version: 0.2.0
+ * Status: ACTIVE DEVELOPMENT
+ *
+ * Validates WeeklyOS drafts before generation.
+ *
+ * Validation levels:
+ *
+ * ERROR
+ *   Blocks Weekly Schedule generation.
+ *
+ * WARNING
+ *   Does not block generation, but should be
+ *   reviewed by the Stage Manager.
+ *
+ * INFO
+ *   Useful context only.
+ *************************************************/
+
+
+/*************************************************
+ * VALIDATE FULL DRAFT
+ *************************************************/
+
+function weeklyOSValidateDraft(draft) {
+  const result = {
+    isValid: true,
+
+    errors: [],
+
+    warnings: [],
+
+    info: [],
+
+    summary: {
+      errorCount: 0,
+
+      warningCount: 0,
+
+      infoCount: 0,
+
+      daysReady: 0,
+
+      daysNeedingReview: 0
+    }
+  };
+
+  if (!draft) {
+    weeklyOSAddValidationError_(
+      result,
+      {
+        code:
+          "NO_DRAFT",
+
+        message:
+          "No WeeklyOS draft exists."
+      }
+    );
+
+    return weeklyOSFinalizeValidationResult_(
+      result
+    );
+  }
+
+  weeklyOSValidateDraftIdentity_(
+    draft,
+    result
+  );
+
+  weeklyOSValidateDraftDates_(
+    draft,
+    result
+  );
+
+  weeklyOSValidateDraftStructure_(
+    draft,
+    result
+  );
+
+  (
+    Array.isArray(draft.days)
+      ? draft.days
+      : []
+  ).forEach(
+    function (day) {
+      weeklyOSValidateDay_(
+        day,
+        draft,
+        result
+      );
+    }
+  );
+
+  weeklyOSValidateSourceStatus_(
+    draft,
+    result
+  );
+
+  weeklyOSValidateDuplicatePerformances_(
+    draft,
+    result
+  );
+
+  weeklyOSValidatePerformanceSequence_(
+    draft,
+    result
+  );
+
+  weeklyOSValidateGeneratedSheetStatus_(
+    draft,
+    result
+  );
+
+  return weeklyOSFinalizeValidationResult_(
+    result
+  );
+}
+
+
+/*************************************************
+ * VALIDATE DRAFT IDENTITY
+ *************************************************/
+
+function weeklyOSValidateDraftIdentity_(
+  draft,
+  result
+) {
+  if (!draft.id) {
+    weeklyOSAddValidationError_(
+      result,
+      {
+        code:
+          "MISSING_DRAFT_ID",
+
+        message:
+          "The WeeklyOS draft is missing its draft ID."
+      }
+    );
+  }
+
+  if (!draft.status) {
+    weeklyOSAddValidationWarning_(
+      result,
+      {
+        code:
+          "MISSING_DRAFT_STATUS",
+
+        message:
+          "The WeeklyOS draft does not have a status."
+      }
+    );
+  }
+
+  if (!draft.schemaVersion) {
+    weeklyOSAddValidationWarning_(
+      result,
+      {
+        code:
+          "MISSING_SCHEMA_VERSION",
+
+        message:
+          "The WeeklyOS draft does not identify its WeekModel version."
+      }
+    );
+  }
+}
+
+
+/*************************************************
+ * VALIDATE WEEK DATES
+ *************************************************/
+
+function weeklyOSValidateDraftDates_(
+  draft,
+  result
+) {
+  const weekStart =
+    weeklyOSAsDate_(
+      draft.weekStart
+    );
+
+  const weekEnd =
+    weeklyOSAsDate_(
+      draft.weekEnd
+    );
+
+  if (!weekStart) {
+    weeklyOSAddValidationError_(
+      result,
+      {
+        code:
+          "INVALID_WEEK_START",
+
+        message:
+          "The WeeklyOS draft has an invalid Monday date."
+      }
+    );
+  }
+
+  if (!weekEnd) {
+    weeklyOSAddValidationError_(
+      result,
+      {
+        code:
+          "INVALID_WEEK_END",
+
+        message:
+          "The WeeklyOS draft has an invalid Sunday date."
+      }
+    );
+  }
+
+  if (
+    weekStart &&
+    weekStart.getDay() !== 1
+  ) {
+    weeklyOSAddValidationError_(
+      result,
+      {
+        code:
+          "WEEK_DOES_NOT_START_MONDAY",
+
+        message:
+          "The WeeklyOS week must begin on a Monday."
+      }
+    );
+  }
+
+  if (
+    weekEnd &&
+    weekEnd.getDay() !== 0
+  ) {
+    weeklyOSAddValidationError_(
+      result,
+      {
+        code:
+          "WEEK_DOES_NOT_END_SUNDAY",
+
+        message:
+          "The WeeklyOS week must end on a Sunday."
+      }
+    );
+  }
+
+  if (
+    weekStart &&
+    weekEnd
+  ) {
+    const expectedEnd =
+      weeklyOSAddDays_(
+        weekStart,
+        6
+      );
+
+    if (
+      !weeklyOSDatesEqual_(
+        expectedEnd,
+        weekEnd
+      )
+    ) {
+      weeklyOSAddValidationError_(
+        result,
+        {
+          code:
+            "INVALID_WEEK_RANGE",
+
+          message:
+            "The WeeklyOS draft must cover exactly Monday through Sunday."
+        }
+      );
+    }
+  }
+}
+
+
+/*************************************************
+ * VALIDATE DRAFT STRUCTURE
+ *************************************************/
+
+function weeklyOSValidateDraftStructure_(
+  draft,
+  result
+) {
+  if (
+    !Array.isArray(
+      draft.days
+    )
+  ) {
+    weeklyOSAddValidationError_(
+      result,
+      {
+        code:
+          "MISSING_DAYS",
+
+        message:
+          "The WeeklyOS draft does not contain a days array."
+      }
+    );
+
+    return;
+  }
+
+  if (
+    draft.days.length !== 7
+  ) {
+    weeklyOSAddValidationError_(
+      result,
+      {
+        code:
+          "INVALID_DAY_COUNT",
+
+        message:
+          "The WeeklyOS draft must contain exactly seven days."
+      }
+    );
+  }
+
+  const seenDates = {};
+
+  draft.days.forEach(
+    function (day) {
+      const dateKey =
+        weeklyOSDateKey_(
+          day.date
+        );
+
+      if (!dateKey) {
+        return;
+      }
+
+      if (
+        seenDates[dateKey]
+      ) {
+        weeklyOSAddValidationError_(
+          result,
+          {
+            code:
+              "DUPLICATE_DAY",
+
+            date:
+              dateKey,
+
+            message:
+              "The WeeklyOS draft contains more than one entry for " +
+              dateKey +
+              "."
+          }
+        );
+      }
+
+      seenDates[dateKey] =
+        true;
+    }
+  );
+}
+
+
+/*************************************************
+ * VALIDATE ONE DAY
+ *************************************************/
+
+function weeklyOSValidateDay_(
+  day,
+  draft,
+  result
+) {
+  if (!day) {
+    weeklyOSAddValidationError_(
+      result,
+      {
+        code:
+          "INVALID_DAY",
+
+        message:
+          "A day in the WeeklyOS draft is empty."
+      }
+    );
+
+    return;
+  }
+
+  weeklyOSEnsureDayModel_(
+    day
+  );
+
+  const dateKey =
+    weeklyOSDateKey_(
+      day.date
+    );
+
+  if (!dateKey) {
+    weeklyOSAddValidationError_(
+      result,
+      {
+        code:
+          "MISSING_DAY_DATE",
+
+        message:
+          "A day in the WeeklyOS draft is missing its date."
+      }
+    );
+
+    return;
+  }
+
+  if (
+    !weeklyOSDateIsWithinRange_(
+      dateKey,
+      draft.weekStart,
+      draft.weekEnd
+    )
+  ) {
+    weeklyOSAddValidationError_(
+      result,
+      {
+        code:
+          "DAY_OUTSIDE_WEEK",
+
+        date:
+          dateKey,
+
+        message:
+          weeklyOSValidationDayLabel_(
+            day
+          ) +
+          " falls outside the selected WeeklyOS week."
+      }
+    );
+  }
+
+  weeklyOSValidateDaySchedule_(
+    day,
+    result
+  );
+
+  weeklyOSValidatePerformances_(
+    day,
+    result
+  );
+
+  weeklyOSValidateRehearsals_(
+    day,
+    result
+  );
+
+  weeklyOSValidateMeetings_(
+    day,
+    result
+  );
+
+  weeklyOSValidateWorkCalls_(
+    day,
+    result
+  );
+
+  weeklyOSValidatePutIns_(
+    day,
+    result
+  );
+
+  weeklyOSValidateCompanyEvents_(
+    day,
+    result
+  );
+
+  weeklyOSValidateCastOuts_(
+    day,
+    result
+  );
+
+  weeklyOSValidateCrewOuts_(
+    day,
+    result
+  );
+
+  weeklyOSValidatePt_(
+    day,
+    result
+  );
+
+  weeklyOSValidateNotes_(
+    day,
+    result
+  );
+
+  if (
+    day.status ===
+    "READY"
+  ) {
+    result.summary
+      .daysReady++;
+  } else {
+    result.summary
+      .daysNeedingReview++;
+  }
+}
+
+
+/*************************************************
+ * VALIDATE DAY SCHEDULE
+ *************************************************/
+
+function weeklyOSValidateDaySchedule_(
+  day,
+  result
+) {
+  const label =
+    weeklyOSValidationDayLabel_(
+      day
+    );
+
+  if (
+    day.dayOff &&
+    day.performances.length
+  ) {
+    weeklyOSAddValidationError_(
+      result,
+      {
+        code:
+          "DAY_OFF_WITH_PERFORMANCE",
+
+        date:
+          day.date,
+
+        message:
+          label +
+          " is marked as a day off but also contains a performance."
+      }
+    );
+  }
+
+  if (
+    day.dayOff &&
+    (
+      day.rehearsals.length ||
+      day.meetings.length ||
+      day.workCalls.length ||
+      day.putIns.length
+    )
+  ) {
+    weeklyOSAddValidationWarning_(
+      result,
+      {
+        code:
+          "DAY_OFF_WITH_ACTIVITY",
+
+        date:
+          day.date,
+
+        message:
+          label +
+          " is marked as a day off but also contains scheduled activity."
+      }
+    );
+  }
+
+  if (
+    !day.dayOff &&
+    !day.performances.length &&
+    !day.rehearsals.length &&
+    !day.meetings.length &&
+    !day.workCalls.length &&
+    !day.putIns.length &&
+    !day.companyEvents.length &&
+    !day.pt.length &&
+    !day.notes.length
+  ) {
+    weeklyOSAddValidationInfo_(
+      result,
+      {
+        code:
+          "EMPTY_DAY",
+
+        date:
+          day.date,
+
+        message:
+          label +
+          " contains no detected schedule or company activity."
+      }
+    );
+  }
+
+  if (!day.reviewed) {
+    weeklyOSAddValidationWarning_(
+      result,
+      {
+        code:
+          "DAY_NOT_REVIEWED",
+
+        date:
+          day.date,
+
+        message:
+          label +
+          " has not been marked reviewed."
+      }
+    );
+  }
+}
+
+
+/*************************************************
+ * VALIDATE PERFORMANCES
+ *************************************************/
+
+function weeklyOSValidatePerformances_(
+  day,
+  result
+) {
+  const label =
+    weeklyOSValidationDayLabel_(
+      day
+    );
+
+  day.performances.forEach(
+    function (
+      performance,
+      index
+    ) {
+      const performanceLabel =
+        performance.label ||
+        (
+          performance.performanceNumber
+            ? "Performance #" +
+              performance.performanceNumber
+            : "Performance " +
+              (index + 1)
+        );
+
+      if (
+        !performance.label &&
+        !performance.performanceNumber
+      ) {
+        weeklyOSAddValidationError_(
+          result,
+          {
+            code:
+              "PERFORMANCE_MISSING_IDENTITY",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              " contains a performance without a label or performance number."
+          }
+        );
+      }
+
+      if (!performance.time) {
+        weeklyOSAddValidationError_(
+          result,
+          {
+            code:
+              "PERFORMANCE_MISSING_TIME",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              performanceLabel +
+              " does not have a performance time."
+          }
+        );
+      }
+
+      if (!performance.showType) {
+        weeklyOSAddValidationWarning_(
+          result,
+          {
+            code:
+              "PERFORMANCE_MISSING_SHOW_TYPE",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              performanceLabel +
+              " is not identified as MAT or EVE."
+          }
+        );
+      }
+
+      if (!performance.conductor) {
+        weeklyOSAddValidationError_(
+          result,
+          {
+            code:
+              "PERFORMANCE_MISSING_CONDUCTOR",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              performanceLabel +
+              " does not have a conductor."
+          }
+        );
+      }
+
+      if (
+        performance.showType &&
+        [
+          "MAT",
+          "EVE"
+        ].indexOf(
+          weeklyOSUpper_(
+            performance.showType
+          )
+        ) < 0
+      ) {
+        weeklyOSAddValidationWarning_(
+          result,
+          {
+            code:
+              "UNRECOGNIZED_SHOW_TYPE",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              performanceLabel +
+              ' has an unrecognized show type of "' +
+              performance.showType +
+              '".'
+          }
+        );
+      }
+
+      if (
+        !performance.source
+      ) {
+        weeklyOSAddValidationInfo_(
+          result,
+          {
+            code:
+              "PERFORMANCE_MISSING_SOURCE",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              performanceLabel +
+              " does not identify its source."
+          }
+        );
+      }
+    }
+  );
+
+  if (
+    day.performances.length > 2
+  ) {
+    weeklyOSAddValidationWarning_(
+      result,
+      {
+        code:
+          "MORE_THAN_TWO_PERFORMANCES",
+
+        date:
+          day.date,
+
+        message:
+          label +
+          " contains more than two performances."
+      }
+    );
+  }
+
+  if (
+    day.performances.length === 2
+  ) {
+    const showTypes =
+      day.performances.map(
+        function (performance) {
+          return weeklyOSUpper_(
+            performance.showType
+          );
+        }
+      );
+
+    if (
+      showTypes.indexOf(
+        "MAT"
+      ) < 0 ||
+      showTypes.indexOf(
+        "EVE"
+      ) < 0
+    ) {
+      weeklyOSAddValidationWarning_(
+        result,
+        {
+          code:
+            "TWO_SHOW_TYPES_INCOMPLETE",
+
+          date:
+            day.date,
+
+          message:
+            label +
+            " has two performances, but they are not clearly identified as one MAT and one EVE."
+        }
+      );
+    }
+  }
+}
+
+
+/*************************************************
+ * VALIDATE REHEARSALS
+ *************************************************/
+
+function weeklyOSValidateRehearsals_(
+  day,
+  result
+) {
+  const label =
+    weeklyOSValidationDayLabel_(
+      day
+    );
+
+  day.rehearsals.forEach(
+    function (
+      rehearsal,
+      index
+    ) {
+      const rehearsalLabel =
+        rehearsal.title ||
+        "Rehearsal " +
+        (index + 1);
+
+      if (rehearsal.canceled) {
+        return;
+      }
+
+      if (!rehearsal.title) {
+        weeklyOSAddValidationError_(
+          result,
+          {
+            code:
+              "REHEARSAL_MISSING_TITLE",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              " contains a rehearsal without a title."
+          }
+        );
+      }
+
+      if (!rehearsal.startTime) {
+        weeklyOSAddValidationWarning_(
+          result,
+          {
+            code:
+              "REHEARSAL_MISSING_START_TIME",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              rehearsalLabel +
+              " does not have a start time."
+          }
+        );
+      }
+
+      if (
+        rehearsal.type ===
+          "UNDERSTUDY" &&
+        !rehearsal.location
+      ) {
+        weeklyOSAddValidationError_(
+          result,
+          {
+            code:
+              "UNDERSTUDY_REHEARSAL_MISSING_LOCATION",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              rehearsalLabel +
+              " does not have a location."
+          }
+        );
+      }
+
+      if (
+        rehearsal.type ===
+          "NEW_HIRE" &&
+        !rehearsal.location
+      ) {
+        weeklyOSAddValidationError_(
+          result,
+          {
+            code:
+              "NEW_HIRE_REHEARSAL_MISSING_LOCATION",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              rehearsalLabel +
+              " needs a rehearsal location."
+          }
+        );
+      }
+
+      if (
+        rehearsal.type ===
+          "UNDERSTUDY" &&
+        !rehearsal.called.length
+      ) {
+        weeklyOSAddValidationWarning_(
+          result,
+          {
+            code:
+              "UNDERSTUDY_REHEARSAL_MISSING_CALLED",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              rehearsalLabel +
+              " does not have a called list."
+          }
+        );
+      }
+
+      if (
+        rehearsal.requiresReview
+      ) {
+        weeklyOSAddValidationError_(
+          result,
+          {
+            code:
+              "REHEARSAL_NEEDS_REVIEW",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              rehearsalLabel +
+              " still needs review."
+          }
+        );
+      }
+
+      if (
+        rehearsal.startTime &&
+        rehearsal.endTime &&
+        !weeklyOSIsValidTimeOrder_(
+          rehearsal.startTime,
+          rehearsal.endTime
+        )
+      ) {
+        weeklyOSAddValidationWarning_(
+          result,
+          {
+            code:
+              "REHEARSAL_TIME_ORDER",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              rehearsalLabel +
+              " may have an end time earlier than its start time."
+          }
+        );
+      }
+    }
+  );
+}
+
+
+/*************************************************
+ * VALIDATE MEETINGS
+ *************************************************/
+
+function weeklyOSValidateMeetings_(
+  day,
+  result
+) {
+  const label =
+    weeklyOSValidationDayLabel_(
+      day
+    );
+
+  day.meetings.forEach(
+    function (
+      meeting,
+      index
+    ) {
+      const meetingLabel =
+        meeting.title ||
+        "Meeting " +
+        (index + 1);
+
+      if (!meeting.title) {
+        weeklyOSAddValidationError_(
+          result,
+          {
+            code:
+              "MEETING_MISSING_TITLE",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              " contains a meeting without a title."
+          }
+        );
+      }
+
+      if (!meeting.startTime) {
+        weeklyOSAddValidationWarning_(
+          result,
+          {
+            code:
+              "MEETING_MISSING_START_TIME",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              meetingLabel +
+              " does not have a start time."
+          }
+        );
+      }
+
+      if (
+        meeting.replacesExistingCall &&
+        !meeting.notes
+      ) {
+        weeklyOSAddValidationInfo_(
+          result,
+          {
+            code:
+              "MEETING_REPLACES_CALL_WITHOUT_NOTE",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              meetingLabel +
+              " replaces an existing call but does not include an explanatory note."
+          }
+        );
+      }
+    }
+  );
+}
+
+
+/*************************************************
+ * VALIDATE WORK CALLS
+ *************************************************/
+
+function weeklyOSValidateWorkCalls_(
+  day,
+  result
+) {
+  const label =
+    weeklyOSValidationDayLabel_(
+      day
+    );
+
+  day.workCalls.forEach(
+    function (
+      workCall,
+      index
+    ) {
+      const workCallLabel =
+        workCall.title ||
+        "Work Call " +
+        (index + 1);
+
+      if (!workCall.title) {
+        weeklyOSAddValidationError_(
+          result,
+          {
+            code:
+              "WORK_CALL_MISSING_TITLE",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              " contains a work call without a title."
+          }
+        );
+      }
+
+      if (!workCall.startTime) {
+        weeklyOSAddValidationWarning_(
+          result,
+          {
+            code:
+              "WORK_CALL_MISSING_START_TIME",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              workCallLabel +
+              " does not have a start time."
+          }
+        );
+      }
+
+      if (!workCall.called.length) {
+        weeklyOSAddValidationWarning_(
+          result,
+          {
+            code:
+              "WORK_CALL_MISSING_CALLED",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              workCallLabel +
+              " does not have a called department or personnel list."
+          }
+        );
+      }
+    }
+  );
+}
+
+
+/*************************************************
+ * VALIDATE PUT-INS
+ *************************************************/
+
+function weeklyOSValidatePutIns_(
+  day,
+  result
+) {
+  const label =
+    weeklyOSValidationDayLabel_(
+      day
+    );
+
+  day.putIns.forEach(
+    function (
+      putIn,
+      index
+    ) {
+      const putInLabel =
+        putIn.title ||
+        "Put-In " +
+        (index + 1);
+
+      if (!putIn.title) {
+        weeklyOSAddValidationError_(
+          result,
+          {
+            code:
+              "PUT_IN_MISSING_TITLE",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              " contains a Put-In without a title."
+          }
+        );
+      }
+
+      if (!putIn.startTime) {
+        weeklyOSAddValidationWarning_(
+          result,
+          {
+            code:
+              "PUT_IN_MISSING_START_TIME",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              putInLabel +
+              " does not have an overall start time."
+          }
+        );
+      }
+
+      if (!putIn.location) {
+        weeklyOSAddValidationWarning_(
+          result,
+          {
+            code:
+              "PUT_IN_MISSING_LOCATION",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              putInLabel +
+              " does not have a location."
+          }
+        );
+      }
+
+      if (!putIn.segments.length) {
+        weeklyOSAddValidationWarning_(
+          result,
+          {
+            code:
+              "PUT_IN_MISSING_SEGMENTS",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              putInLabel +
+              " does not contain any timed segments."
+          }
+        );
+      }
+
+      if (
+        putIn.requiresReview
+      ) {
+        weeklyOSAddValidationError_(
+          result,
+          {
+            code:
+              "PUT_IN_NEEDS_REVIEW",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              putInLabel +
+              " still needs review."
+          }
+        );
+      }
+
+      putIn.segments.forEach(
+        function (
+          segment,
+          segmentIndex
+        ) {
+          if (!segment.title) {
+            weeklyOSAddValidationWarning_(
+              result,
+              {
+                code:
+                  "PUT_IN_SEGMENT_MISSING_TITLE",
+
+                date:
+                  day.date,
+
+                message:
+                  label +
+                  ": segment " +
+                  (segmentIndex + 1) +
+                  " of " +
+                  putInLabel +
+                  " does not have a title."
+              }
+            );
+          }
+
+          if (!segment.startTime) {
+            weeklyOSAddValidationWarning_(
+              result,
+              {
+                code:
+                  "PUT_IN_SEGMENT_MISSING_TIME",
+
+                date:
+                  day.date,
+
+                message:
+                  label +
+                  ": " +
+                  (
+                    segment.title ||
+                    "a Put-In segment"
+                  ) +
+                  " does not have a start time."
+              }
+            );
+          }
+        }
+      );
+    }
+  );
+}
+
+
+/*************************************************
+ * VALIDATE COMPANY EVENTS
+ *************************************************/
+
+function weeklyOSValidateCompanyEvents_(
+  day,
+  result
+) {
+  const label =
+    weeklyOSValidationDayLabel_(
+      day
+    );
+
+  day.companyEvents.forEach(
+    function (
+      event,
+      index
+    ) {
+      const eventLabel =
+        event.title ||
+        weeklyOSCompanyEventLabel_(
+          event.type
+        ) ||
+        "Company event " +
+        (index + 1);
+
+      if (!event.title) {
+        weeklyOSAddValidationWarning_(
+          result,
+          {
+            code:
+              "COMPANY_EVENT_MISSING_TITLE",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              " contains a company event without a title."
+          }
+        );
+      }
+
+      if (
+        [
+          "NEW_HIRE_START",
+          "FIRST_PERFORMANCE",
+          "SCHEDULED_RETURN",
+          "FINAL_PERFORMANCE"
+        ].indexOf(
+          event.type
+        ) >= 0 &&
+        !event.people.length
+      ) {
+        weeklyOSAddValidationWarning_(
+          result,
+          {
+            code:
+              "COMPANY_EVENT_MISSING_PEOPLE",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              eventLabel +
+              " does not identify a person."
+          }
+        );
+      }
+
+      if (
+        event.requiresReview
+      ) {
+        weeklyOSAddValidationWarning_(
+          result,
+          {
+            code:
+              "COMPANY_EVENT_NEEDS_REVIEW",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": " +
+              eventLabel +
+              " should be reviewed."
+          }
+        );
+      }
+    }
+  );
+}
+
+
+/*************************************************
+ * VALIDATE CAST OUTS
+ *************************************************/
+
+function weeklyOSValidateCastOuts_(
+  day,
+  result
+) {
+  const label =
+    weeklyOSValidationDayLabel_(day);
+
+  day.castOuts.forEach(function (outItem) {
+
+    const person =
+      outItem.person ||
+      "Unknown cast member";
+
+    if (!outItem.person) {
+      weeklyOSAddValidationError_(result, {
+        code: "CAST_OUT_MISSING_PERSON",
+        date: day.date,
+        message:
+          label +
+          " contains a cast out without a person."
+      });
+    }
+
+    if (!outItem.role) {
+      weeklyOSAddValidationWarning_(result, {
+        code: "CAST_OUT_MISSING_ROLE",
+        date: day.date,
+        message:
+          label +
+          ": " +
+          person +
+          " is OUT, but the role is missing."
+      });
+    }
+
+    if (
+      !outItem.coverage &&
+      !weeklyOSOutDoesNotRequireCoverage_(outItem)
+    ) {
+      weeklyOSAddValidationError_(result, {
+        code: "CAST_OUT_MISSING_COVERAGE",
+        date: day.date,
+        message:
+          label +
+          ": coverage is missing for " +
+          person +
+          (
+            outItem.role
+              ? " (" + outItem.role + ")"
+              : ""
+          ) +
+          "."
+      });
+    }
+
+    if (!outItem.approvalStatus) {
+      weeklyOSAddValidationWarning_(result, {
+        code: "CAST_OUT_MISSING_APPROVAL",
+        date: day.date,
+        message:
+          label +
+          ": " +
+          person +
+          "'s out does not have an approval status."
+      });
+    }
+
+    /*
+     * Two-show validation.
+     *
+     * ALL means BOTH.
+     * MAT and EVE are also explicit.
+     * Only warn if the scope is actually unknown.
+     */
+    if (day.performances.length > 1) {
+
+      const appliesTo =
+        weeklyOSUpper_(
+          outItem.appliesTo
+        );
+
+      const explicit =
+        appliesTo === "ALL" ||
+        appliesTo === "BOTH" ||
+        appliesTo === "MAT" ||
+        appliesTo === "EVE";
+
+      if (!explicit) {
+        weeklyOSAddValidationWarning_(result, {
+          code: "CAST_OUT_TWO_SHOW_SCOPE",
+          date: day.date,
+          message:
+            label +
+            ": confirm whether " +
+            person +
+            "'s out applies to MAT, EVE, or both."
+        });
+      }
+    }
+
+    if (
+      outItem.requiresReview &&
+      !weeklyOSOutDoesNotRequireCoverage_(outItem)
+    ) {
+      weeklyOSAddValidationError_(result, {
+        code: "CAST_OUT_NEEDS_REVIEW",
+        date: day.date,
+        message:
+          label +
+          ": " +
+          person +
+          "'s out still needs review."
+      });
+    }
+
+  });
+}
+
+/*************************************************
+ * VALIDATE CREW OUTS
+ *************************************************/
+
+function weeklyOSValidateCrewOuts_(
+  day,
+  result
+) {
+  const label =
+    weeklyOSValidationDayLabel_(day);
+
+  day.crewOuts.forEach(function (outItem) {
+
+    const person =
+      outItem.person ||
+      "Unknown crew member";
+
+    if (!outItem.person) {
+      weeklyOSAddValidationError_(result, {
+        code: "CREW_OUT_MISSING_PERSON",
+        date: day.date,
+        message:
+          label +
+          " contains a crew out without a person."
+      });
+    }
+
+    if (!outItem.department) {
+      weeklyOSAddValidationWarning_(result, {
+        code: "CREW_OUT_MISSING_DEPARTMENT",
+        date: day.date,
+        message:
+          label +
+          ": " +
+          person +
+          " is OUT, but the department or position is missing."
+      });
+    }
+
+    if (!outItem.coverage) {
+      weeklyOSAddValidationWarning_(result, {
+        code: "CREW_OUT_MISSING_COVERAGE",
+        date: day.date,
+        message:
+          label +
+          ": crew coverage is missing for " +
+          person +
+          (
+            outItem.department
+              ? " (" + outItem.department + ")"
+              : ""
+          ) +
+          "."
+      });
+    }
+
+    if (!outItem.approvalStatus) {
+      weeklyOSAddValidationWarning_(result, {
+        code: "CREW_OUT_MISSING_APPROVAL",
+        date: day.date,
+        message:
+          label +
+          ": " +
+          person +
+          "'s out does not have an approval status."
+      });
+    }
+
+    /*
+     * Two-show validation.
+     *
+     * ALL means BOTH.
+     */
+    if (day.performances.length > 1) {
+
+      const appliesTo =
+        weeklyOSUpper_(
+          outItem.appliesTo
+        );
+
+      const explicit =
+        appliesTo === "ALL" ||
+        appliesTo === "BOTH" ||
+        appliesTo === "MAT" ||
+        appliesTo === "EVE";
+
+      if (!explicit) {
+        weeklyOSAddValidationWarning_(result, {
+          code: "CREW_OUT_TWO_SHOW_SCOPE",
+          date: day.date,
+          message:
+            label +
+            ": confirm whether " +
+            person +
+            "'s crew out applies to MAT, EVE, or both."
+        });
+      }
+    }
+
+  });
+}
+
+
+/*************************************************
+ * VALIDATE PT
+ *************************************************/
+
+function weeklyOSValidatePt_(
+  day,
+  result
+) {
+  const label =
+    weeklyOSValidationDayLabel_(
+      day
+    );
+
+  day.pt.forEach(
+    function (
+      ptItem,
+      index
+    ) {
+      if (!ptItem.startTime) {
+        weeklyOSAddValidationWarning_(
+          result,
+          {
+            code:
+              "PT_MISSING_START_TIME",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": PT item " +
+              (index + 1) +
+              " does not have a start time."
+          }
+        );
+      }
+
+      if (!ptItem.location) {
+        weeklyOSAddValidationInfo_(
+          result,
+          {
+            code:
+              "PT_MISSING_LOCATION",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              ": PT does not identify a location."
+          }
+        );
+      }
+    }
+  );
+}
+
+
+/*************************************************
+ * VALIDATE NOTES
+ *************************************************/
+
+function weeklyOSValidateNotes_(
+  day,
+  result
+) {
+  const label =
+    weeklyOSValidationDayLabel_(
+      day
+    );
+
+  day.notes.forEach(
+    function (
+      note,
+      index
+    ) {
+      const text =
+        typeof note ===
+          "string"
+          ? weeklyOSNormalizeText_(
+              note
+            )
+          : weeklyOSNormalizeText_(
+              note.text
+            );
+
+      if (!text) {
+        weeklyOSAddValidationInfo_(
+          result,
+          {
+            code:
+              "EMPTY_NOTE",
+
+            date:
+              day.date,
+
+            message:
+              label +
+              " contains an empty note at position " +
+              (index + 1) +
+              "."
+          }
+        );
+      }
+    }
+  );
+}
+
+
+/*************************************************
+ * VALIDATE SOURCE STATUS
+ *************************************************/
+
+function weeklyOSValidateSourceStatus_(
+  draft,
+  result
+) {
+  const statuses =
+    draft.sourceStatus || {};
+
+  const requiredSources = [
+    {
+      key:
+        "expandedCalendar",
+
+      label:
+        "Expanded Calendar",
+
+      blocking:
+        true
+    },
+
+    {
+      key:
+        "productionCalendar",
+
+      label:
+        "Production Calendar",
+
+      blocking:
+        false
+    },
+
+    {
+      key:
+        "pdVacationTracker",
+
+      label:
+        "PD/Vacation Tracker",
+
+      blocking:
+        false
+    },
+
+    {
+      key:
+        "crewOuts",
+
+      label:
+        "Crew Outs",
+
+      blocking:
+        false
+    },
+
+    {
+      key:
+        "contactSheet",
+
+      label:
+        "Contact Sheet",
+
+      blocking:
+        false
+    }
+  ];
+
+  requiredSources.forEach(
+    function (source) {
+      const status =
+        statuses[
+          source.key
+        ];
+
+      if (
+        !status ||
+        !status.found
+      ) {
+        const item = {
+          code:
+            "SOURCE_NOT_FOUND",
+
+          source:
+            source.label,
+
+          message:
+            source.label +
+            " was not found or could not be read."
+        };
+
+        if (
+          source.blocking
+        ) {
+          weeklyOSAddValidationError_(
+            result,
+            item
+          );
+        } else {
+          weeklyOSAddValidationWarning_(
+            result,
+            item
+          );
+        }
+      }
+    }
+  );
+}
+
+
+/*************************************************
+ * VALIDATE DUPLICATE PERFORMANCE NUMBERS
+ *************************************************/
+
+function weeklyOSValidateDuplicatePerformances_(
+  draft,
+  result
+) {
+  const seen = {};
+
+  draft.days.forEach(
+    function (day) {
+      day.performances.forEach(
+        function (performance) {
+          const number =
+            weeklyOSNormalizeText_(
+              performance
+                .performanceNumber
+            );
+
+          if (!number) {
+            return;
+          }
+
+          if (seen[number]) {
+            weeklyOSAddValidationError_(
+              result,
+              {
+                code:
+                  "DUPLICATE_PERFORMANCE_NUMBER",
+
+                date:
+                  day.date,
+
+                message:
+                  "Performance #" +
+                  number +
+                  " appears more than once in this WeeklyOS draft."
+              }
+            );
+
+            return;
+          }
+
+          seen[number] =
+            day.date;
+        }
+      );
+    }
+  );
+}
+
+
+/*************************************************
+ * VALIDATE PERFORMANCE SEQUENCE
+ *************************************************/
+
+function weeklyOSValidatePerformanceSequence_(
+  draft,
+  result
+) {
+  const performances = [];
+
+  draft.days.forEach(
+    function (day) {
+      day.performances.forEach(
+        function (performance) {
+          const number =
+            Number(
+              performance
+                .performanceNumber
+            );
+
+          if (
+            !isNaN(number)
+          ) {
+            performances.push({
+              number:
+                number,
+
+              date:
+                day.date
+            });
+          }
+        }
+      );
+    }
+  );
+
+  performances.sort(
+    function (first, second) {
+      return (
+        new Date(
+          first.date
+        ).getTime() -
+        new Date(
+          second.date
+        ).getTime()
+      );
+    }
+  );
+
+  for (
+    let index = 1;
+    index <
+      performances.length;
+    index++
+  ) {
+    const previous =
+      performances[
+        index - 1
+      ];
+
+    const current =
+      performances[index];
+
+    if (
+      current.number <=
+      previous.number
+    ) {
+      weeklyOSAddValidationWarning_(
+        result,
+        {
+          code:
+            "PERFORMANCE_SEQUENCE",
+
+          date:
+            current.date,
+
+          message:
+            "Performance #" +
+            current.number +
+            " does not follow Performance #" +
+            previous.number +
+            " in ascending order."
+        }
+      );
+    }
+  }
+}
+
+
+/*************************************************
+ * VALIDATE GENERATED SHEET STATUS
+ *************************************************/
+
+function weeklyOSValidateGeneratedSheetStatus_(
+  draft,
+  result
+) {
+  if (
+    draft.status ===
+      "GENERATED" &&
+    (
+      !draft.metadata ||
+      !draft.metadata
+        .generatedSheetName
+    )
+  ) {
+    weeklyOSAddValidationWarning_(
+      result,
+      {
+        code:
+          "GENERATED_WITHOUT_SHEET",
+
+        message:
+          "The draft is marked GENERATED, but no generated sheet name is stored."
+      }
+    );
+  }
+}
+
+
+/*************************************************
+ * OUT COVERAGE EXCEPTION
+ *
+ * LOA and MLOA may still need downstream handling,
+ * but WeeklyOS should not always require a coverage
+ * assignment in the weekly schedule draft itself.
+ *************************************************/
+
+function weeklyOSOutDoesNotRequireCoverage_(
+  outItem
+) {
+  const type =
+    weeklyOSUpper_(
+      outItem.type ||
+      outItem.reason
+    );
+
+  return (
+    type === "LOA" ||
+    type === "MLOA"
+  );
+}
+
+
+/*************************************************
+ * ASSERT DRAFT IS READY
+ *
+ * Called by the generator.
+ *************************************************/
+
+function weeklyOSAssertDraftReady_(
+  draft
+) {
+  const validation =
+    weeklyOSValidateDraft(
+      draft
+    );
+
+  if (
+    validation.isValid
+  ) {
+    return validation;
+  }
+
+  const errorLines =
+    validation.errors.map(
+      function (item) {
+        return (
+          "• " +
+          item.message
+        );
+      }
+    );
+
+  throw new Error(
+    "WeeklyOS draft is not ready to generate:\n\n" +
+    errorLines.join("\n")
+  );
+}
+
+
+/*************************************************
+ * ADD VALIDATION ITEMS
+ *************************************************/
+
+function weeklyOSAddValidationError_(
+  result,
+  item
+) {
+  result.errors.push(
+    weeklyOSCreateValidationItem_(
+      "ERROR",
+      item
+    )
+  );
+}
+
+
+function weeklyOSAddValidationWarning_(
+  result,
+  item
+) {
+  result.warnings.push(
+    weeklyOSCreateValidationItem_(
+      "WARNING",
+      item
+    )
+  );
+}
+
+
+function weeklyOSAddValidationInfo_(
+  result,
+  item
+) {
+  result.info.push(
+    weeklyOSCreateValidationItem_(
+      "INFO",
+      item
+    )
+  );
+}
+
+
+/*************************************************
+ * CREATE VALIDATION ITEM
+ *************************************************/
+
+function weeklyOSCreateValidationItem_(
+  level,
+  input
+) {
+  input = input || {};
+
+  return {
+    id:
+      weeklyOSUuid_(),
+
+    level:
+      level,
+
+    code:
+      input.code ||
+      "GENERAL",
+
+    date:
+      input.date ||
+      "",
+
+    source:
+      input.source ||
+      "",
+
+    message:
+      weeklyOSNormalizeText_(
+        input.message
+      )
+  };
+}
+
+
+/*************************************************
+ * FINALIZE VALIDATION RESULT
+ *************************************************/
+
+function weeklyOSFinalizeValidationResult_(
+  result
+) {
+  result.errors =
+    weeklyOSDeduplicateValidationItems_(
+      result.errors
+    );
+
+  result.warnings =
+    weeklyOSDeduplicateValidationItems_(
+      result.warnings
+    );
+
+  result.info =
+    weeklyOSDeduplicateValidationItems_(
+      result.info
+    );
+
+  result.summary.errorCount =
+    result.errors.length;
+
+  result.summary.warningCount =
+    result.warnings.length;
+
+  result.summary.infoCount =
+    result.info.length;
+
+  result.isValid =
+    result.errors.length === 0;
+
+  return result;
+}
+
+
+/*************************************************
+ * DEDUPLICATE VALIDATION ITEMS
+ *************************************************/
+
+function weeklyOSDeduplicateValidationItems_(
+  items
+) {
+  const seen = {};
+
+  return (
+    Array.isArray(items)
+      ? items
+      : []
+  ).filter(
+    function (item) {
+      const key = [
+        item.level || "",
+        item.code || "",
+        item.date || "",
+        item.message || ""
+      ].join("|");
+
+      if (
+        seen[key]
+      ) {
+        return false;
+      }
+
+      seen[key] =
+        true;
+
+      return true;
+    }
+  );
+}
+
+
+/*************************************************
+ * DAY LABEL FOR VALIDATION MESSAGES
+ *************************************************/
+
+function weeklyOSValidationDayLabel_(
+  day
+) {
+  return (
+    day.dateLabel ||
+    weeklyOSFormatDate_(
+      day.date,
+      "EEEE, MMMM d"
+    ) ||
+    "Unknown day"
+  );
+}
+
+
+/*************************************************
+ * BASIC TIME ORDER CHECK
+ *
+ * This is intentionally forgiving because the
+ * schedule may use formats such as:
+ *
+ * 12:00 PM
+ * 12 PM
+ * Noon
+ * Midnight
+ *************************************************/
+
+function weeklyOSIsValidTimeOrder_(
+  startTime,
+  endTime
+) {
+  const startMinutes =
+    weeklyOSTimeToMinutes_(
+      startTime
+    );
+
+  const endMinutes =
+    weeklyOSTimeToMinutes_(
+      endTime
+    );
+
+  if (
+    startMinutes === null ||
+    endMinutes === null
+  ) {
+    return true;
+  }
+
+  return (
+    endMinutes >=
+    startMinutes
+  );
+}
+
+
+/*************************************************
+ * CONVERT TIME TEXT TO MINUTES
+ *************************************************/
+
+function weeklyOSTimeToMinutes_(
+  value
+) {
+  const text =
+    weeklyOSUpper_(
+      value
+    );
+
+  if (!text) {
+    return null;
+  }
+
+  if (
+    text === "NOON"
+  ) {
+    return 12 * 60;
+  }
+
+  if (
+    text === "MIDNIGHT"
+  ) {
+    return 0;
+  }
+
+  const match =
+    text.match(
+      /^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?/
+    );
+
+  if (!match) {
+    return null;
+  }
+
+  let hour =
+    Number(
+      match[1]
+    );
+
+  const minutes =
+    Number(
+      match[2] || 0
+    );
+
+  const meridiem =
+    match[3] || "";
+
+  if (
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+
+  if (
+    meridiem === "PM" &&
+    hour !== 12
+  ) {
+    hour += 12;
+  }
+
+  if (
+    meridiem === "AM" &&
+    hour === 12
+  ) {
+    hour = 0;
+  }
+
+  if (
+    hour < 0 ||
+    hour > 23
+  ) {
+    return null;
+  }
+
+  return (
+    hour * 60 +
+    minutes
+  );
+}
