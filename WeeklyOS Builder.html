@@ -1,0 +1,6420 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+
+  <style>
+    :root {
+      --bg: #f4f5f7;
+      --panel: #ffffff;
+      --panel-soft: #fafafa;
+      --text: #202124;
+      --muted: #6b7280;
+      --border: #d8dce2;
+      --border-dark: #b9bec7;
+      --gold: #8a6b12;
+      --gold-dark: #6d530e;
+      --gold-soft: #f7f0d8;
+      --green: #137333;
+      --green-soft: #edf7ef;
+      --yellow: #8a5a00;
+      --yellow-soft: #fff8e8;
+      --red: #b3261e;
+      --red-soft: #fceeee;
+      --blue: #315f9f;
+      --blue-soft: #eef4ff;
+      --shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+    }
+
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      overflow: hidden;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .app {
+      height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .header {
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 20px 14px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      z-index: 2;
+    }
+
+    .header-main {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .header-title-group {
+      min-width: 0;
+    }
+
+    .title {
+      margin: 0;
+      font-size: 23px;
+      line-height: 1.15;
+      letter-spacing: 0.01em;
+    }
+
+    .tool-name {
+      margin-top: 3px;
+      font-size: 16px;
+      line-height: 1.2;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .subtitle {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .source-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 13px;
+    }
+
+    .source-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: #fff;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .source-pill.found {
+      color: var(--green);
+      border-color: #b7d8bd;
+      background: var(--green-soft);
+    }
+
+    .source-pill.missing {
+      color: var(--red);
+      border-color: #efbbb6;
+      background: var(--red-soft);
+    }
+
+    .source-pill.none-found {
+      color: var(--yellow);
+      border-color: #e7c981;
+      background: var(--yellow-soft);
+    }
+
+    .content {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 14px;
+      padding: 14px;
+    }
+
+    .days-column {
+      min-height: 0;
+      overflow-y: auto;
+      padding-right: 3px;
+    }
+
+    .sidebar {
+      min-height: 0;
+      overflow-y: auto;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 15px;
+      box-shadow: var(--shadow);
+    }
+
+    .sidebar-section {
+      margin-bottom: 20px;
+    }
+
+    .sidebar-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .sidebar-title {
+      margin: 0 0 9px;
+      font-size: 12px;
+      line-height: 1.2;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .day-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 11px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .day-card:last-child {
+      margin-bottom: 0;
+    }
+
+    .day-header {
+      padding: 13px 15px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      cursor: pointer;
+      user-select: none;
+      background: var(--panel);
+    }
+
+    .day-header:hover {
+      background: var(--panel-soft);
+    }
+
+    .day-heading {
+      min-width: 0;
+    }
+
+    .day-title {
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.25;
+    }
+
+    .day-subtitle {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 3px;
+    }
+
+    .day-badge-area {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .collapse-icon {
+      font-size: 17px;
+      color: var(--muted);
+      margin-left: 5px;
+      transition: transform 0.15s ease;
+    }
+
+    .day-card.collapsed .collapse-icon {
+      transform: rotate(-90deg);
+    }
+
+    .day-card.collapsed .day-body {
+      display: none;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--border);
+      background: #fff;
+      border-radius: 999px;
+      padding: 4px 7px;
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .badge.ready {
+      background: var(--green-soft);
+      border-color: #b7d8bd;
+      color: var(--green);
+    }
+
+    .badge.review {
+      background: var(--yellow-soft);
+      border-color: #e7c981;
+      color: var(--yellow);
+    }
+
+    .badge.error {
+      background: var(--red-soft);
+      border-color: #efbbb6;
+      color: var(--red);
+    }
+
+    .badge.info {
+      background: var(--blue-soft);
+      border-color: #b9ccec;
+      color: var(--blue);
+    }
+
+    .day-body {
+      border-top: 1px solid var(--border);
+      padding: 15px;
+    }
+
+    .section {
+      margin-bottom: 18px;
+    }
+
+    .section:last-child {
+      margin-bottom: 0;
+    }
+
+    .section-heading-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .section-title {
+      font-size: 11px;
+      line-height: 1.2;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .section-count {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .item-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 8px;
+      background: #fff;
+    }
+
+    .item-card:last-child {
+      margin-bottom: 0;
+    }
+
+    .item-card.warning {
+      border-color: #e7c981;
+      background: #fffdf7;
+    }
+
+    .item-card.error {
+      border-color: #efbbb6;
+      background: #fffafa;
+    }
+
+    .item-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .item-title {
+      font-weight: 700;
+      font-size: 13px;
+      line-height: 1.3;
+    }
+
+    .item-detail {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .item-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .empty-state {
+      border: 1px dashed var(--border-dark);
+      border-radius: 8px;
+      padding: 9px 10px;
+      color: var(--muted);
+      font-size: 12px;
+      font-style: italic;
+      background: var(--panel-soft);
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    .btn {
+      border: 1px solid var(--border-dark);
+      border-radius: 7px;
+      background: #fff;
+      color: var(--text);
+      padding: 7px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .btn:hover {
+      background: #f8f8f8;
+    }
+
+    .btn.primary {
+      background: var(--gold);
+      border-color: var(--gold);
+      color: #fff;
+    }
+
+    .btn.primary:hover {
+      background: var(--gold-dark);
+      border-color: var(--gold-dark);
+    }
+
+    .btn.soft-gold {
+      background: var(--gold-soft);
+      border-color: #d9c17b;
+      color: var(--gold-dark);
+    }
+
+    .btn.danger {
+      color: var(--red);
+      border-color: #dfaaa5;
+      background: #fff;
+    }
+
+    .btn.small {
+      padding: 5px 8px;
+      font-size: 11px;
+    }
+
+    .btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .form-grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .form-field {
+      min-width: 0;
+    }
+
+    .form-field.full {
+      grid-column: 1 / -1;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    input[type="text"],
+    input[type="date"],
+    input[type="time"],
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--border-dark);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      padding: 7px 8px;
+      font-size: 12px;
+      line-height: 1.3;
+    }
+
+    textarea {
+      min-height: 66px;
+      resize: vertical;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      outline: 2px solid rgba(138, 107, 18, 0.18);
+      border-color: var(--gold);
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    .review-row {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .review-label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .out-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 8px;
+      background: #fff;
+    }
+
+    .out-card:last-child {
+      margin-bottom: 0;
+    }
+
+    .out-grid {
+      display: grid;
+      grid-template-columns: minmax(150px, 1.2fr) minmax(130px, 0.9fr) minmax(160px, 1fr);
+      gap: 8px;
+      align-items: end;
+    }
+
+    .person-name {
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .person-role {
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 2px;
+    }
+
+    .source-list {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .observation {
+      border-left: 4px solid var(--border-dark);
+      border-radius: 0 7px 7px 0;
+      background: var(--panel-soft);
+      padding: 8px 9px;
+      margin-bottom: 8px;
+    }
+
+    .observation:last-child {
+      margin-bottom: 0;
+    }
+
+    .observation.info {
+      border-left-color: var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .observation.warning {
+      border-left-color: #d89400;
+      background: var(--yellow-soft);
+    }
+
+    .observation.error {
+      border-left-color: var(--red);
+      background: var(--red-soft);
+    }
+
+    .observation-title {
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+
+    .observation-detail {
+      color: var(--muted);
+      margin-top: 3px;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    .validation-summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .validation-stat {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 6px;
+      text-align: center;
+      background: var(--panel-soft);
+    }
+
+    .validation-stat strong {
+      display: block;
+      font-size: 17px;
+      line-height: 1;
+    }
+
+    .validation-stat span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+
+    .validation-stat.error strong {
+      color: var(--red);
+    }
+
+    .validation-stat.warning strong {
+      color: var(--yellow);
+    }
+
+    .validation-stat.info strong {
+      color: var(--blue);
+    }
+
+    .validation-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .validation-item {
+      margin-bottom: 7px;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    .validation-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .validation-item.error {
+      color: var(--red);
+    }
+
+    .validation-item.warning {
+      color: var(--yellow);
+    }
+
+    .validation-item.info {
+      color: var(--blue);
+    }
+
+    .draft-select-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 7px;
+    }
+
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .history-item {
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 8px;
+      background: var(--panel-soft);
+    }
+
+    .history-title {
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .history-detail {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    .footer {
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      padding: 11px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      z-index: 2;
+    }
+
+    .footer-status {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.3;
+    }
+
+    .footer-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 7px;
+    }
+
+    .loading-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    .loading-overlay.visible {
+      display: flex;
+    }
+
+    .loading-card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: var(--shadow);
+      padding: 18px 22px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 900;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(0, 0, 0, 0.42);
+    }
+
+    .modal-backdrop.visible {
+      display: flex;
+    }
+
+    .modal {
+      width: min(720px, 100%);
+      max-height: calc(100vh - 48px);
+      overflow-y: auto;
+      border-radius: 12px;
+      background: #fff;
+      border: 1px solid var(--border);
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.2);
+    }
+
+    .modal-header {
+      padding: 15px 17px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .modal-title {
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .modal-body {
+      padding: 17px;
+    }
+
+    .modal-footer {
+      border-top: 1px solid var(--border);
+      padding: 12px 17px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 7px;
+    }
+
+    .icon-button {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 20px;
+      line-height: 1;
+      padding: 2px 5px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+
+    .day-quick-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      justify-content: flex-end;
+    }
+
+    .generated-notes {
+      margin-bottom: 9px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel-soft);
+      padding: 9px 10px;
+    }
+
+    .generated-note {
+      font-size: 12px;
+      line-height: 1.45;
+      margin-bottom: 5px;
+    }
+
+    .generated-note:last-child {
+      margin-bottom: 0;
+    }
+
+    .generated-note-label {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+
+    @media (max-width: 900px) {
+      .content {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        display: none;
+      }
+
+      .out-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .day-header {
+  align-items: center;
+}
+
+.day-heading {
+  flex: 1;
+}
+
+.day-title {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.day-headline {
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.day-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.section {
+  padding-top: 2px;
+}
+
+.section + .section {
+  padding-top: 15px;
+  border-top: 1px solid var(--border);
+}
+
+.section-title {
+  font-size: 11px;
+}
+
+.schedule-item {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(0, 2fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.schedule-item-time {
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.schedule-item-main {
+  min-width: 0;
+}
+
+.out-card {
+  padding: 12px;
+}
+
+.out-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.out-side {
+  min-width: 0;
+}
+
+.out-side.in {
+  border-left: 1px solid var(--border);
+  padding-left: 16px;
+}
+
+.out-side-heading {
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.out-person {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.out-meta {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.compact-empty-actions {
+  margin-top: 4px;
+}
+
+.attention-section {
+  border: 1px solid #e7c981;
+  border-radius: 9px;
+  background: var(--yellow-soft);
+  padding: 11px;
+}
+
+.attention-title {
+  margin-bottom: 7px;
+  color: var(--yellow);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.attention-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.attention-list li {
+  margin-bottom: 4px;
+}
+
+.attention-list li:last-child {
+  margin-bottom: 0;
+}
+
+.ready-message {
+  border: 1px solid #b7d8bd;
+  border-radius: 9px;
+  background: var(--green-soft);
+  color: var(--green);
+  padding: 9px 11px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@media (max-width: 750px) {
+  .out-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .out-side.in {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+    padding-left: 0;
+  }
+
+  .schedule-item {
+    grid-template-columns: 1fr;
+  }
+}
+
+    .day-title-continuation {
+      font-weight: 700;
+    }
+
+    .putin-editor-heading {
+      margin-top: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+    }
+
+    .putin-editor-help {
+      margin: 4px 0 10px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .putin-assignment-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .putin-assignment-row {
+      display: grid;
+      grid-template-columns: minmax(120px, 0.8fr) minmax(180px, 1.4fr) auto;
+      gap: 8px;
+      align-items: end;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      background: var(--panel-soft);
+    }
+
+    .putin-new-checkbox {
+      padding-bottom: 8px;
+      white-space: nowrap;
+    }
+  
+
+    .day-date-line {
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.25;
+    }
+
+    .day-schedule-lines {
+      margin-top: 4px;
+    }
+
+    .day-schedule-line {
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    .day-schedule-line.muted {
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    .day-part-divider {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 4px 0 18px;
+      color: var(--gold-dark);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .day-part-divider::before,
+    .day-part-divider::after {
+      content: "";
+      height: 3px;
+      flex: 1;
+      background: var(--gold);
+      border-radius: 99px;
+    }
+
+    .show-label {
+      margin: 1px 0 7px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .show-divider {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 14px 0 10px;
+      color: var(--gold-dark);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .show-divider::before,
+    .show-divider::after {
+      content: "";
+      height: 4px;
+      flex: 1;
+      background: var(--gold);
+      border-radius: 99px;
+    }
+
+    .performance-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .performance-conductor {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .performance-conductor.missing {
+      color: var(--yellow);
+    }
+
+    .performance-calls {
+      display: none;
+      margin-top: 10px;
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
+    }
+
+    .performance-calls.open {
+      display: block;
+    }
+
+    .performance-call-row {
+      display: grid;
+      grid-template-columns: 90px minmax(0, 1fr);
+      gap: 12px;
+      padding: 6px 4px;
+      border-bottom: 1px solid #eceff3;
+      font-size: 12px;
+    }
+
+    .performance-call-row:last-child {
+      border-bottom: 0;
+    }
+
+    .performance-call-time {
+      font-weight: 700;
+    }
+
+    .performance-call-final {
+      margin-top: 3px;
+      border-top: 2px solid var(--gold);
+      font-weight: 700;
+    }
+
+  </style>
+</head>
+
+<body>
+  <datalist id="weeklyOSPeopleList"></datalist>
+  <div class="app">
+
+    <header class="header">
+      <div class="header-main">
+        <div class="header-title-group">
+          <h1 class="title" id="showTitle">
+            StageOS
+          </h1>
+
+          <div class="tool-name" id="toolTitle">
+            Weekly Schedule Builder
+          </div>
+
+          <div class="subtitle" id="pageSubtitle">
+            Loading weekly draft…
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <button class="btn" onclick="openWeekPicker()">
+            Change Week
+          </button>
+
+          <button class="btn" onclick="refreshDraft()">
+            Refresh Draft
+          </button>
+
+          <button class="btn primary" onclick="generateSchedule()">
+            Generate Weekly Schedule
+          </button>
+        </div>
+      </div>
+
+      <div class="source-row" id="sourceRow"></div>
+    </header>
+
+    <main class="content">
+      <section class="days-column" id="daysContainer"></section>
+
+      <aside class="sidebar">
+        <section class="sidebar-section">
+          <h2 class="sidebar-title">
+            Things I noticed
+          </h2>
+
+          <div id="observationsContainer"></div>
+        </section>
+
+        <section class="sidebar-section">
+          <h2 class="sidebar-title">
+            Validation
+          </h2>
+
+          <div id="validationContainer"></div>
+        </section>
+
+        <section class="sidebar-section">
+          <h2 class="sidebar-title">
+            Draft history
+          </h2>
+
+          <div id="historyContainer"></div>
+        </section>
+      </aside>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-status" id="footerStatus">
+        Draft loaded.
+      </div>
+
+      <div class="footer-actions">
+        <button class="btn" onclick="saveDraft(true)">
+          Save Draft
+        </button>
+
+        <button class="btn primary" onclick="generateSchedule()">
+          Generate Weekly Schedule
+        </button>
+      </div>
+    </footer>
+  </div>
+
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-card" id="loadingMessage">
+      Working…
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="modalTitle">
+          Edit Item
+        </div>
+
+        <button class="icon-button" onclick="closeModal()">
+          ×
+        </button>
+      </div>
+
+      <div class="modal-body" id="modalBody"></div>
+
+      <div class="modal-footer" id="modalFooter"></div>
+    </div>
+  </div>
+
+  <script>
+    let draft = <?!= initialDraftJson ?>;
+    let bootstrap = <?!= initialBootstrapJson ?>;
+
+    let saveTimer = null;
+    let modalSaveHandler = null;
+
+    document.addEventListener(
+      "DOMContentLoaded",
+      function () {
+        renderAll();
+      }
+    );
+
+
+    /*************************************************
+     * MAIN RENDER
+     *************************************************/
+
+    function renderAll() {
+      renderPeopleDatalist();
+      renderHeader();
+      renderSources();
+      renderDays();
+      renderObservations();
+      renderValidation();
+      renderHistory();
+    }
+
+    function renderPeopleDatalist() {
+      const list =
+        document.getElementById(
+          "weeklyOSPeopleList"
+        );
+
+      if (!list) {
+        return;
+      }
+
+      list.innerHTML =
+        (
+          bootstrap.peopleOptions ||
+          []
+        ).map(
+          function (person) {
+            return (
+              '<option value="' +
+                escapeAttribute(person) +
+              '"></option>'
+            );
+          }
+        ).join("");
+    }
+
+
+    /*************************************************
+     * HEADER
+     *************************************************/
+
+    function renderHeader() {
+      const showTitle =
+        bootstrap.showTitle ||
+        "StageOS";
+
+      const toolTitle =
+        bootstrap.toolTitle ||
+        "Weekly Schedule Builder";
+
+      document.getElementById(
+        "showTitle"
+      ).textContent =
+        showTitle;
+
+      document.getElementById(
+        "toolTitle"
+      ).textContent =
+        toolTitle;
+
+      document.getElementById(
+        "pageSubtitle"
+      ).textContent =
+        [
+          formatDateLabel(
+            draft.weekStart
+          ),
+          "through",
+          formatDateLabel(
+            draft.weekEnd
+          ),
+          "• Revision",
+          draft.revision || 1
+        ].join(" ");
+
+      document.title =
+        showTitle +
+        " — " +
+        toolTitle;
+    }
+
+
+    /*************************************************
+     * SOURCE STATUS
+     *************************************************/
+
+    function renderSources() {
+      const container =
+        document.getElementById(
+          "sourceRow"
+        );
+
+      container.innerHTML = "";
+
+      Object.keys(
+        draft.sourceStatus || {}
+      ).forEach(
+        function (key) {
+          const source =
+            draft.sourceStatus[key];
+
+          const pill =
+            document.createElement(
+              "div"
+            );
+
+          let className =
+            "source-pill";
+
+          if (source.found) {
+            className += " found";
+          } else if (
+            source.status ===
+            "NONE_FOUND"
+          ) {
+            className +=
+              " none-found";
+          } else {
+            className +=
+              " missing";
+          }
+
+          pill.className =
+            className;
+
+          pill.title =
+            source.details || "";
+
+          pill.textContent =
+            (
+              source.found
+                ? "✓ "
+                : "— "
+            ) +
+            source.label;
+
+          container.appendChild(
+            pill
+          );
+        }
+      );
+    }
+
+
+    /*************************************************
+     * DAYS
+     *************************************************/
+
+    function renderDays() {
+      const container =
+        document.getElementById(
+          "daysContainer"
+        );
+
+      container.innerHTML = "";
+
+      draft.days.forEach(
+        function (day, dayIndex) {
+          const card =
+            document.createElement(
+              "article"
+            );
+
+          card.className =
+            "day-card";
+
+          card.dataset.dayIndex =
+            dayIndex;
+
+          const header =
+            document.createElement(
+              "div"
+            );
+
+          header.className =
+            "day-header";
+
+          header.innerHTML =
+            buildDayHeaderHtml(
+              day
+            );
+
+          header.addEventListener(
+            "click",
+            function () {
+              card.classList.toggle(
+                "collapsed"
+              );
+            }
+          );
+
+          const body =
+            document.createElement(
+              "div"
+            );
+
+          body.className =
+            "day-body";
+
+          body.innerHTML =
+            buildDayBodyHtml(
+              day,
+              dayIndex
+            );
+
+          card.appendChild(
+            header
+          );
+
+          card.appendChild(
+            body
+          );
+
+          container.appendChild(
+            card
+          );
+        }
+      );
+    }
+
+
+    function buildDayHeaderHtml(
+      day
+    ) {
+      const rawLabels =
+        Array.isArray(day.statusLabels)
+          ? day.statusLabels
+          : [];
+
+      const statusKey =
+        String(day.status || "").toUpperCase();
+
+      const labels = [];
+      const seen = {};
+
+      rawLabels.forEach(
+        function (label) {
+          const key =
+            String(label || "").toUpperCase();
+
+          if (
+            !key ||
+            key === "STANDARD" ||
+            key === "NO_PERFORMANCE" ||
+            key === statusKey ||
+            seen[key]
+          ) {
+            return;
+          }
+
+          seen[key] = true;
+          labels.push(label);
+        }
+      );
+
+      const labelBadges =
+        labels.map(
+          function (label) {
+            return (
+              '<span class="badge ' +
+                statusBadgeClass(label) +
+              '">' +
+                escapeHtml(formatLabel(label)) +
+              '</span>'
+            );
+          }
+        ).join("");
+
+      const statusBadge =
+        '<span class="badge ' +
+          statusBadgeClass(day.status) +
+        '">' +
+          escapeHtml(formatLabel(day.status)) +
+        '</span>';
+
+      const dayIndex =
+        Number.isInteger(day.index)
+          ? day.index
+          : draft.days.indexOf(day);
+
+      const quickActions =
+        '<div class="day-quick-actions">' +
+          '<button class="btn small" onclick="event.stopPropagation(); addManualOut(' +
+            dayIndex +
+            ', \'CAST\')">Add Cast Out</button>' +
+          '<button class="btn small" onclick="event.stopPropagation(); addManualOut(' +
+            dayIndex +
+            ', \'CREW\')">Add Crew Out</button>' +
+          (
+            day.pt && day.pt.length
+              ? ""
+              : (
+                '<button class="btn small" onclick="event.stopPropagation(); addPt(' +
+                  dayIndex +
+                ')">Add PT</button>'
+              )
+          ) +
+        '</div>';
+
+      return (
+        '<div class="day-heading">' +
+          '<div class="day-title">' +
+            buildDayWeeklyHeadlineHtml(day) +
+          '</div>' +
+          '<div class="day-headline">' +
+            escapeHtml(buildDaySubheadline(day)) +
+          '</div>' +
+        '</div>' +
+
+        '<div class="day-header-actions">' +
+          quickActions +
+          labelBadges +
+          statusBadge +
+          '<span class="collapse-icon">⌄</span>' +
+        '</div>'
+      );
+    }
+
+
+    function buildDayWeeklyHeadlineHtml(
+      day
+    ) {
+      const dateText =
+        day.dateLabel ||
+        formatDateLabel(day.date);
+
+      const lines = [];
+
+      if (day.dayOff && day.dayOff.title) {
+        lines.push(day.dayOff.title);
+      } else {
+        (day.rehearsals || []).forEach(
+          function (item) {
+            if (item.canceled) return;
+
+            lines.push(
+              [
+                item.title || "Rehearsal",
+                [item.startTime, item.endTime]
+                  .filter(Boolean)
+                  .join("–")
+              ]
+                .filter(Boolean)
+                .join(" — ")
+            );
+          }
+        );
+
+        (day.meetings || []).forEach(
+          function (item) {
+            lines.push(
+              [
+                item.title || "Meeting",
+                [item.startTime, item.endTime]
+                  .filter(Boolean)
+                  .join("–")
+              ]
+                .filter(Boolean)
+                .join(" — ")
+            );
+          }
+        );
+
+        (day.workCalls || []).forEach(
+          function (item) {
+            lines.push(
+              [
+                item.title || "Work Call",
+                [item.startTime, item.endTime]
+                  .filter(Boolean)
+                  .join("–")
+              ]
+                .filter(Boolean)
+                .join(" — ")
+            );
+          }
+        );
+
+        (day.putIns || []).forEach(
+          function (item) {
+            lines.push(
+              [
+                item.title || "PUT-IN",
+                [item.startTime, item.endTime]
+                  .filter(Boolean)
+                  .join("–")
+              ]
+                .filter(Boolean)
+                .join(" — ")
+            );
+          }
+        );
+
+        (day.performances || []).forEach(
+          function (performance) {
+            lines.push(
+              [
+                performance.performanceNumber
+                  ? "Performance #" + performance.performanceNumber
+                  : (performance.label || "Performance"),
+                performance.time
+              ]
+                .filter(Boolean)
+                .join(" — ")
+            );
+          }
+        );
+      }
+
+      const scheduleHtml =
+        lines.length
+          ? lines.map(
+              function (line) {
+                return (
+                  '<div class="day-schedule-line">' +
+                    escapeHtml(line) +
+                  '</div>'
+                );
+              }
+            ).join("")
+          : '<div class="day-schedule-line muted">No scheduled activity</div>';
+
+      return (
+        '<div class="day-date-line">' +
+          escapeHtml(dateText) +
+        '</div>' +
+        '<div class="day-schedule-lines">' +
+          scheduleHtml +
+        '</div>'
+      );
+    }
+
+function buildDayBodyHtml(
+      day,
+      dayIndex
+    ) {
+      if (day.dayOff) {
+        const hasExtras =
+          (day.companyEvents || []).length ||
+          (day.castOuts || []).length ||
+          (day.crewOuts || []).length ||
+          (day.pt || []).length ||
+          (day.notes || []).length;
+
+        if (!hasExtras) {
+          return (
+            '<section class="section">' +
+              '<div class="ready-message">AEA day off — no additional activity.</div>' +
+            '</section>'
+          );
+        }
+
+        return (
+          buildCompanyEventsSection(day, dayIndex) +
+          buildOutsSection(day.castOuts, "Cast Outs", dayIndex, "castOuts") +
+          buildOutsSection(day.crewOuts, "Crew Outs", dayIndex, "crewOuts") +
+          buildNotesSection(day, dayIndex) +
+          buildDayAttentionSection(day)
+        );
+      }
+
+      const isTwoShowDay =
+        (day.performances || []).length > 1;
+
+      const hasAfternoonActivity =
+        (day.rehearsals || []).length ||
+        (day.meetings || []).length ||
+        (day.workCalls || []).length ||
+        (day.putIns || []).length;
+
+      const afternoonHtml =
+        isTwoShowDay
+          ? ""
+          : buildAfternoonSection(day, dayIndex);
+
+      /*
+       * Every single-performance day gets a clear visual benchmark
+       * before the performance portion of the day.
+       *
+       * Two-show days use the dedicated Matinee / Evening divider
+       * inside buildPerformanceSection() instead.
+       */
+      const dayPartDivider =
+        !isTwoShowDay && (day.performances || []).length
+          ? '<div class="day-part-divider"><span>Performance Calls</span></div>'
+          : "";
+
+      return (
+        afternoonHtml +
+        buildCompanyEventsSection(day, dayIndex) +
+        dayPartDivider +
+        buildPerformanceSection(day, dayIndex) +
+        buildOutsSection(day.castOuts, "Cast Outs", dayIndex, "castOuts") +
+        buildOutsSection(day.crewOuts, "Crew Outs", dayIndex, "crewOuts") +
+        buildNotesSection(day, dayIndex) +
+        buildDayAttentionSection(day)
+      );
+    }
+
+function buildDayWeeklyHeadline(
+  day
+) {
+  const dateText =
+    day.dateLabel ||
+    formatDateLabel(
+      day.date
+    );
+
+  const scheduleParts = [];
+
+  (
+    day.rehearsals ||
+    []
+  ).forEach(
+    function (item) {
+      if (item.canceled) {
+        return;
+      }
+
+      scheduleParts.push(
+        [
+          item.title ||
+            "Rehearsal",
+
+          [
+            item.startTime,
+            item.endTime
+          ]
+            .filter(Boolean)
+            .join("–")
+        ]
+          .filter(Boolean)
+          .join(" — ")
+      );
+    }
+  );
+
+  (
+    day.putIns ||
+    []
+  ).forEach(
+    function (item) {
+      scheduleParts.push(
+        [
+          item.title ||
+            "PUT-IN",
+
+          [
+            item.startTime,
+            item.endTime
+          ]
+            .filter(Boolean)
+            .join("–")
+        ]
+          .filter(Boolean)
+          .join(" — ")
+      );
+    }
+  );
+
+  (
+    day.performances ||
+    []
+  ).forEach(
+    function (performance) {
+      scheduleParts.push(
+        [
+          performance.performanceNumber
+            ? "Performance #" +
+              performance.performanceNumber
+            : (
+              performance.label ||
+              "Performance"
+            ),
+
+          performance.time
+        ]
+          .filter(Boolean)
+          .join(" — ")
+      );
+    }
+  );
+
+  if (
+    day.dayOff &&
+    day.dayOff.title
+  ) {
+    scheduleParts.push(
+      day.dayOff.title
+    );
+  }
+
+  return [
+    dateText,
+    scheduleParts.join(" + ")
+  ]
+    .filter(Boolean)
+    .join(" — ");
+}
+
+
+function buildDaySubheadline(
+  day
+) {
+  const parts = [];
+
+  if (
+    day.castOuts.length
+  ) {
+    parts.push(
+      day.castOuts.length +
+      " Cast Out" +
+      (
+        day.castOuts.length === 1
+          ? ""
+          : "s"
+      )
+    );
+  }
+
+  if (
+    day.crewOuts.length
+  ) {
+    parts.push(
+      day.crewOuts.length +
+      " Crew Out" +
+      (
+        day.crewOuts.length === 1
+          ? ""
+          : "s"
+      )
+    );
+  }
+
+  if (
+    day.pt.length
+  ) {
+    parts.push(
+      "PT"
+    );
+  }
+
+  if (
+    day.companyEvents.length
+  ) {
+    parts.push(
+      day.companyEvents.length +
+      " Company Activity"
+    );
+  }
+
+  if (!parts.length) {
+    return "No additional activity";
+  }
+
+  return parts.join(" • ");
+}
+
+
+    /*************************************************
+     * PERFORMANCE SECTION
+     *************************************************/
+
+    function buildPerformanceSection(
+      day,
+      dayIndex
+    ) {
+      let content = "";
+
+      if (day.dayOff) {
+        content =
+          '<div class="item-card">' +
+            '<div class="item-title">' +
+              escapeHtml(day.dayOff.title || "AEA DAY OFF") +
+            '</div>' +
+          '</div>';
+      } else if ((day.performances || []).length) {
+        content =
+          day.performances.map(
+            function (performance, performanceIndex) {
+              const title =
+                performance.performanceNumber
+                  ? "PERFORMANCE #" + performance.performanceNumber
+                  : (performance.label || "PERFORMANCE");
+
+              const callRows =
+                buildPerformanceCallRows(performance);
+
+              const divider =
+                performanceIndex > 0
+                  ? '<div class="show-divider"><span>Evening Performance</span></div>'
+                  : (
+                    day.performances.length > 1
+                      ? '<div class="show-label">Matinee Performance</div>'
+                      : ""
+                  );
+
+              const conductorHtml =
+                performance.conductor
+                  ? '<div class="performance-conductor">Conductor: ' +
+                      escapeHtml(performance.conductor) +
+                    '</div>'
+                  : '<div class="performance-conductor missing">Conductor not selected</div>';
+
+              return (
+                divider +
+                '<div class="item-card performance-card">' +
+                  '<div class="schedule-item">' +
+                    '<div class="schedule-item-time">' +
+                      escapeHtml(performance.time || "Time TBD") +
+                    '</div>' +
+                    '<div class="schedule-item-main">' +
+                      '<div class="item-title">' + escapeHtml(title) + '</div>' +
+                      conductorHtml +
+                    '</div>' +
+                    '<div class="performance-actions">' +
+                      '<button class="btn small" onclick="event.stopPropagation(); togglePerformanceCalls(' +
+                        dayIndex + ',' + performanceIndex +
+                      ')">Calls <span id="performanceCallsArrow_' + dayIndex + '_' + performanceIndex + '">⌄</span></button>' +
+                      '<button class="btn small" onclick="event.stopPropagation(); editPerformance(' +
+                        dayIndex + ',' + performanceIndex +
+                      ')">Edit</button>' +
+                    '</div>' +
+                  '</div>' +
+                  '<div class="performance-calls" id="performanceCalls_' + dayIndex + '_' + performanceIndex + '">' +
+                    callRows +
+                  '</div>' +
+                '</div>'
+              );
+            }
+          ).join("");
+      } else {
+        content =
+          '<div class="empty-state">No performance scheduled.</div>';
+      }
+
+      return (
+        '<section class="section performance-section">' +
+          '<div class="section-heading-row">' +
+            '<div class="section-title">Performance</div>' +
+            '<div class="section-count">' + (day.performances || []).length + '</div>' +
+          '</div>' +
+          content +
+        '</section>'
+      );
+    }
+
+
+
+    function buildPerformanceCallRows(
+      performance
+    ) {
+      const callDefinitions = [
+        { label: "Wardrobe Call", minutes: 120 },
+        { label: "Crew / SM Call", minutes: 90 },
+        { label: "Hair Call", minutes: 60 },
+        { label: "Half Hour / House Open", minutes: 30 }
+      ];
+
+      const rows = callDefinitions.map(
+        function (call) {
+          const time =
+            subtractMinutesFromDisplayTime(
+              performance.time,
+              call.minutes
+            );
+
+          return (
+            '<div class="performance-call-row">' +
+              '<div class="performance-call-time">' +
+                escapeHtml(time || "TBD") +
+              '</div>' +
+              '<div class="performance-call-label">' +
+                escapeHtml(call.label) +
+              '</div>' +
+            '</div>'
+          );
+        }
+      );
+
+      rows.push(
+        '<div class="performance-call-row performance-call-final">' +
+          '<div class="performance-call-time">' +
+            escapeHtml(performance.time || "TBD") +
+          '</div>' +
+          '<div class="performance-call-label">' +
+            escapeHtml(
+              performance.performanceNumber
+                ? "Performance #" + performance.performanceNumber
+                : (performance.label || "Performance")
+            ) +
+          '</div>' +
+        '</div>'
+      );
+
+      return rows.join("");
+    }
+
+
+    function togglePerformanceCalls(
+      dayIndex,
+      performanceIndex
+    ) {
+      const panel =
+        document.getElementById(
+          "performanceCalls_" + dayIndex + "_" + performanceIndex
+        );
+
+      const arrow =
+        document.getElementById(
+          "performanceCallsArrow_" + dayIndex + "_" + performanceIndex
+        );
+
+      if (!panel) return;
+
+      const open =
+        panel.classList.toggle("open");
+
+      if (arrow) {
+        arrow.textContent = open ? "⌃" : "⌄";
+      }
+    }
+
+
+    function subtractMinutesFromDisplayTime(
+      value,
+      minutesToSubtract
+    ) {
+      const text = String(value || "").trim();
+      const match = text.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
+
+      if (!match) return "";
+
+      let hour = Number(match[1]);
+      const minute = Number(match[2] || 0);
+      const meridiem = match[3].toUpperCase();
+
+      if (hour === 12) hour = 0;
+      if (meridiem === "PM") hour += 12;
+
+      let total = hour * 60 + minute - Number(minutesToSubtract || 0);
+      total = ((total % 1440) + 1440) % 1440;
+
+      const hour24 = Math.floor(total / 60);
+      const outputMinute = total % 60;
+      const outputMeridiem = hour24 >= 12 ? "PM" : "AM";
+      let outputHour = hour24 % 12;
+      if (outputHour === 0) outputHour = 12;
+
+      return (
+        outputHour + ":" +
+        String(outputMinute).padStart(2, "0") +
+        " " + outputMeridiem
+      );
+    }
+
+    /*************************************************
+     * AFTERNOON ACTIVITY
+     *************************************************/
+
+    function buildAfternoonSection(
+      day,
+      dayIndex
+    ) {
+      const activities = [];
+
+      day.rehearsals.forEach(
+        function (
+          item,
+          index
+        ) {
+          activities.push(
+            buildActivityCard(
+              item,
+              "Rehearsal",
+              dayIndex,
+              "rehearsals",
+              index
+            )
+          );
+        }
+      );
+
+      day.meetings.forEach(
+        function (
+          item,
+          index
+        ) {
+          activities.push(
+            buildActivityCard(
+              item,
+              "Meeting",
+              dayIndex,
+              "meetings",
+              index
+            )
+          );
+        }
+      );
+
+      day.workCalls.forEach(
+        function (
+          item,
+          index
+        ) {
+          activities.push(
+            buildActivityCard(
+              item,
+              "Work Call",
+              dayIndex,
+              "workCalls",
+              index
+            )
+          );
+        }
+      );
+
+      day.putIns.forEach(
+        function (
+          item,
+          index
+        ) {
+          activities.push(
+            buildActivityCard(
+              item,
+              "Put-In",
+              dayIndex,
+              "putIns",
+              index
+            )
+          );
+        }
+      );
+
+      return (
+        '<section class="section">' +
+          '<div class="section-heading-row">' +
+            '<div class="section-title">Afternoon Activity</div>' +
+            '<div class="section-count">' +
+              activities.length +
+            "</div>" +
+          "</div>" +
+
+          (
+            activities.length
+              ? activities.join("")
+              : '<div class="empty-state">No afternoon activity entered.</div>'
+          ) +
+
+          '<div class="button-row" style="margin-top:8px;">' +
+            '<button class="btn small" onclick="event.stopPropagation(); addRehearsal(' +
+              dayIndex +
+            ', \'UNDERSTUDY\')">Understudy Rehearsal</button>' +
+
+            '<button class="btn small" onclick="event.stopPropagation(); addRehearsal(' +
+              dayIndex +
+            ', \'NEW_HIRE\')">New-Hire Rehearsal</button>' +
+
+            '<button class="btn small" onclick="event.stopPropagation(); addMeeting(' +
+              dayIndex +
+            ')">Meeting</button>' +
+
+            '<button class="btn small" onclick="event.stopPropagation(); addWorkCall(' +
+              dayIndex +
+            ')">Work Call</button>' +
+
+            '<button class="btn small soft-gold" onclick="event.stopPropagation(); addPutIn(' +
+              dayIndex +
+            ')">Put-In</button>' +
+          "</div>" +
+        "</section>"
+      );
+    }
+
+
+    function buildActivityCard(
+      item,
+      label,
+      dayIndex,
+      fieldName,
+      itemIndex
+    ) {
+      const time =
+        [
+          item.startTime,
+          item.endTime
+        ]
+          .filter(Boolean)
+          .join("–");
+
+      const details = [];
+
+      if (time) {
+        details.push(time);
+      }
+
+      if (item.location) {
+        details.push(
+          item.location
+        );
+      }
+
+      if (
+        item.called &&
+        item.called.length
+      ) {
+        details.push(
+          "Called: " +
+          item.called.join(", ")
+        );
+      }
+
+      if (
+        item.requiresReview
+      ) {
+        details.push(
+          "Needs review"
+        );
+      }
+
+      return (
+        '<div class="item-card ' +
+          (
+            item.requiresReview
+              ? "warning"
+              : ""
+          ) +
+        '">' +
+
+          '<div class="item-top">' +
+            "<div>" +
+              '<div class="item-title">' +
+                escapeHtml(
+                  item.title ||
+                  label
+                ) +
+              "</div>" +
+
+              '<div class="item-detail">' +
+                escapeHtml(
+                  details.join(
+                    " • "
+                  ) ||
+                  label
+                ) +
+              "</div>" +
+            "</div>" +
+
+            '<div class="button-row">' +
+              '<button class="btn small" onclick="event.stopPropagation(); editActivity(' +
+                dayIndex +
+                ", '" +
+                fieldName +
+                "', " +
+                itemIndex +
+              ')">Edit</button>' +
+
+              '<button class="btn small danger" onclick="event.stopPropagation(); removeItem(' +
+                dayIndex +
+                ", '" +
+                fieldName +
+                "', " +
+                itemIndex +
+              ')">Remove</button>' +
+            "</div>" +
+          "</div>" +
+        "</div>"
+      );
+    }
+
+
+    /*************************************************
+     * COMPANY EVENTS
+     *************************************************/
+
+    function buildCompanyEventsSection(
+  day,
+  dayIndex
+) {
+  const items =
+    day.companyEvents.map(
+      function (
+        item,
+        itemIndex
+      ) {
+        const details = [];
+
+        if (
+          item.people &&
+          item.people.length
+        ) {
+          details.push(
+            item.people.join(", ")
+          );
+        }
+
+        if (item.startTime) {
+          details.push(
+            [
+              item.startTime,
+              item.endTime
+            ]
+              .filter(Boolean)
+              .join("–")
+          );
+        }
+
+        if (item.location) {
+          details.push(
+            item.location
+          );
+        }
+
+        return (
+          '<div class="item-card ' +
+            (
+              item.requiresReview
+                ? "warning"
+                : ""
+            ) +
+          '">' +
+
+            '<div class="item-top">' +
+
+              "<div>" +
+                '<div class="item-title">' +
+                  escapeHtml(
+                    item.title ||
+                    formatLabel(
+                      item.type
+                    )
+                  ) +
+                "</div>" +
+
+                (
+                  details.length
+                    ? '<div class="item-detail">' +
+                        escapeHtml(
+                          details.join(" • ")
+                        ) +
+                      "</div>"
+                    : ""
+                ) +
+              "</div>" +
+
+              '<div class="button-row">' +
+
+                '<button class="btn small" onclick="event.stopPropagation(); editCompanyEvent(' +
+                  dayIndex +
+                  "," +
+                  itemIndex +
+                ')">Edit</button>' +
+
+                '<button class="btn small danger" onclick="event.stopPropagation(); removeItem(' +
+                  dayIndex +
+                  ", 'companyEvents', " +
+                  itemIndex +
+                ')">Remove</button>' +
+
+              "</div>" +
+
+            "</div>" +
+
+          "</div>"
+        );
+      }
+    ).join("");
+
+  return (
+    '<section class="section">' +
+
+      '<div class="section-heading-row">' +
+        '<div class="section-title">' +
+          "Company Activity / Pre-Half Hour Call" +
+        "</div>" +
+
+        '<div class="section-count">' +
+          day.companyEvents.length +
+        "</div>" +
+      "</div>" +
+
+      items +
+
+      '<div class="button-row compact-empty-actions">' +
+        '<button class="btn small" onclick="event.stopPropagation(); addCompanyEvent(' +
+          dayIndex +
+        ')">Add Company Activity</button>' +
+      "</div>" +
+
+    "</section>"
+  );
+}
+
+    /*************************************************
+     * PT
+     *************************************************/
+
+    function buildPtSection(
+      day,
+      dayIndex
+    ) {
+      const items =
+        day.pt.length
+          ? day.pt.map(
+              function (
+                item,
+                itemIndex
+              ) {
+                const details =
+                  [
+                    [
+                      item.startTime,
+                      item.endTime
+                    ]
+                      .filter(Boolean)
+                      .join("–"),
+
+                    item.location
+                  ]
+                    .filter(Boolean)
+                    .join(" • ");
+
+                return (
+                  '<div class="item-card">' +
+                    '<div class="item-top">' +
+                      "<div>" +
+                        '<div class="item-title">PT</div>' +
+
+                        '<div class="item-detail">' +
+                          escapeHtml(
+                            details ||
+                            item.notes ||
+                            "PT"
+                          ) +
+                        "</div>" +
+                      "</div>" +
+
+                      '<div class="button-row">' +
+                        '<button class="btn small" onclick="event.stopPropagation(); editPt(' +
+                          dayIndex +
+                          "," +
+                          itemIndex +
+                        ')">Edit</button>' +
+
+                        '<button class="btn small danger" onclick="event.stopPropagation(); removeItem(' +
+                          dayIndex +
+                          ", 'pt', " +
+                          itemIndex +
+                        ')">Remove</button>' +
+                      "</div>" +
+                    "</div>" +
+                  "</div>"
+                );
+              }
+            ).join("")
+          : '<div class="empty-state">No PT detected.</div>';
+
+      return (
+        '<section class="section">' +
+          '<div class="section-heading-row">' +
+            '<div class="section-title">PT</div>' +
+            '<div class="section-count">' +
+              day.pt.length +
+            "</div>" +
+          "</div>" +
+
+          items +
+        "</section>"
+      );
+    }
+
+/*************************************************
+ * OUTS
+ *
+ * Cast:
+ * - Uses a true role-specific dropdown
+ * - Shows only actors who cover that role
+ * - Preserves an existing saved selection
+ *
+ * Crew:
+ * - Keeps the current free-entry people list
+ *************************************************/
+
+function buildOutsSection(
+  items,
+  title,
+  dayIndex,
+  fieldName
+) {
+  const isCastSection =
+    fieldName === "castOuts";
+
+  const content =
+    items.length
+      ? items.map(
+          function (
+            item,
+            itemIndex
+          ) {
+            const coverageControl =
+              buildWeeklyOSCoverageControl_(
+                item,
+                dayIndex,
+                fieldName,
+                itemIndex,
+                isCastSection
+              );
+
+            return (
+              '<div class="out-card">' +
+
+                '<div class="out-grid">' +
+
+                  '<div class="out-side out">' +
+
+                    '<div class="out-side-heading">' +
+                      "Out" +
+                    "</div>" +
+
+                    '<div class="out-person">' +
+                      escapeHtml(
+                        item.person ||
+                        "Unknown"
+                      ) +
+                    "</div>" +
+
+                    '<div class="out-meta">' +
+                      escapeHtml(
+                        item.role ||
+                        item.department ||
+                        ""
+                      ) +
+                    "</div>" +
+
+                    '<div class="form-field" style="margin-top:9px;">' +
+                      '<label class="form-label">Applies To</label>' +
+
+                      '<select onchange="updateOutField(' +
+                        dayIndex +
+                        ", '" +
+                        fieldName +
+                        "', " +
+                        itemIndex +
+                        ", 'appliesTo', this.value" +
+                      ')">' +
+
+                        buildOutScopeOptions(
+                          item.appliesTo
+                        ) +
+
+                      "</select>" +
+                    "</div>" +
+
+                    '<div class="source-list">' +
+                      escapeHtml(
+                        (
+                          item.sources ||
+                          []
+                        ).join(", ")
+                      ) +
+                    "</div>" +
+
+                  "</div>" +
+
+                  '<div class="out-side in">' +
+
+                    '<div class="out-side-heading">' +
+                      "In" +
+                    "</div>" +
+
+                    coverageControl +
+
+                  "</div>" +
+
+                "</div>" +
+
+              "</div>"
+            );
+          }
+        ).join("")
+      : '<div class="empty-state">None.</div>';
+
+  return (
+    '<section class="section">' +
+
+      '<div class="section-heading-row">' +
+
+        '<div class="section-title">' +
+          escapeHtml(title) +
+        "</div>" +
+
+        '<div class="section-count">' +
+          items.length +
+        "</div>" +
+
+      "</div>" +
+
+      content +
+
+    "</section>"
+  );
+}
+
+
+/*************************************************
+ * COVERAGE CONTROL
+ *************************************************/
+
+function buildWeeklyOSCoverageControl_(
+  item,
+  dayIndex,
+  fieldName,
+  itemIndex,
+  isCastSection
+) {
+  item = item || {};
+
+  if (!isCastSection) {
+    return buildWeeklyOSCrewCoverageInput_(
+      item,
+      dayIndex,
+      fieldName,
+      itemIndex
+    );
+  }
+
+  return buildWeeklyOSCastCoverageSelect_(
+    item,
+    dayIndex,
+    fieldName,
+    itemIndex
+  );
+}
+
+
+/*************************************************
+ * CAST COVERAGE
+ *************************************************/
+
+function buildWeeklyOSCastCoverageSelect_(
+  item,
+  dayIndex,
+  fieldName,
+  itemIndex
+) {
+  const role =
+    String(item.role || "").trim();
+
+  const selectedCoverage =
+    String(item.coverage || "").trim();
+
+  const options =
+    getWeeklyOSCastCoverageOptionsForRole_(
+      role
+    );
+
+  /*
+   * Preserve a previously saved selection, even if
+   * the current role map has since changed.
+   */
+  if (
+    selectedCoverage &&
+    options.indexOf(selectedCoverage) === -1
+  ) {
+    options.unshift(selectedCoverage);
+  }
+
+  const optionHtml = [
+    '<option value="">' +
+      (
+        options.length
+          ? "Choose eligible cover"
+          : "No eligible covers found"
+      ) +
+    "</option>"
+  ]
+    .concat(
+      options.map(
+        function (name) {
+          return (
+            '<option value="' +
+              escapeAttribute(name) +
+            '"' +
+              (
+                name === selectedCoverage
+                  ? " selected"
+                  : ""
+              ) +
+            ">" +
+              escapeHtml(name) +
+            "</option>"
+          );
+        }
+      )
+    )
+    .join("");
+
+  const helperText =
+    options.length
+      ? (
+        options.length +
+        " eligible cover" +
+        (
+          options.length === 1
+            ? ""
+            : "s"
+        ) +
+        " for " +
+        (role || "this role") +
+        "."
+      )
+      : (
+        "No role-specific coverage was found. " +
+        "Check the Cast List coverage mapping."
+      );
+
+  return (
+    '<div class="form-field">' +
+
+      '<label class="form-label">Coverage</label>' +
+
+      '<select' +
+        (
+          options.length
+            ? ""
+            : " disabled"
+        ) +
+        ' onchange="updateOutField(' +
+          dayIndex +
+          ", '" +
+          fieldName +
+          "', " +
+          itemIndex +
+          ", 'coverage', this.value" +
+        ')">' +
+
+        optionHtml +
+
+      "</select>" +
+
+      '<div class="source-list">' +
+        escapeHtml(helperText) +
+      "</div>" +
+
+    "</div>"
+  );
+}
+
+
+/*************************************************
+ * CREW COVERAGE
+ *************************************************/
+
+function buildWeeklyOSCrewCoverageInput_(
+  item,
+  dayIndex,
+  fieldName,
+  itemIndex
+) {
+  return (
+    '<div class="form-field">' +
+
+      '<label class="form-label">Coverage</label>' +
+
+      '<input type="text"' +
+        ' list="weeklyOSPeopleList"' +
+        ' value="' +
+          escapeAttribute(
+            item.coverage ||
+            ""
+          ) +
+        '"' +
+        ' placeholder="Choose or enter coverage"' +
+        ' oninput="updateOutField(' +
+          dayIndex +
+          ", '" +
+          fieldName +
+          "', " +
+          itemIndex +
+          ", 'coverage', this.value" +
+        ')">' +
+
+    "</div>"
+  );
+}
+
+
+/*************************************************
+ * ROLE-SPECIFIC CAST COVERAGE LOOKUP
+ *************************************************/
+
+function getWeeklyOSCastCoverageOptionsForRole_(
+  role
+) {
+  const roleKey =
+    normalizeWeeklyOSCoverageRoleKey_(
+      role
+    );
+
+  if (!roleKey) {
+    return [];
+  }
+
+  const coverageMap =
+    bootstrap.castCoverageByRole ||
+    {};
+
+  if (
+    Array.isArray(
+      coverageMap[roleKey]
+    )
+  ) {
+    return uniqueWeeklyOSCoverageNames_(
+      coverageMap[roleKey]
+    );
+  }
+
+  /*
+   * Handle harmless display differences such as:
+   *
+   * William Barfée ↔ Barfee
+   * Vice Principal Panch ↔ Panch
+   */
+  const matchingKey =
+    Object.keys(coverageMap).find(
+      function (key) {
+        return (
+          key === roleKey ||
+          key.indexOf(roleKey) !== -1 ||
+          roleKey.indexOf(key) !== -1
+        );
+      }
+    );
+
+  if (
+    matchingKey &&
+    Array.isArray(
+      coverageMap[matchingKey]
+    )
+  ) {
+    return uniqueWeeklyOSCoverageNames_(
+      coverageMap[matchingKey]
+    );
+  }
+
+  return [];
+}
+
+
+function normalizeWeeklyOSCoverageRoleKey_(
+  value
+) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[éèêë]/g, "e")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+
+function uniqueWeeklyOSCoverageNames_(
+  names
+) {
+  const seen = {};
+
+  return (
+    Array.isArray(names)
+      ? names
+      : []
+  )
+    .map(function (name) {
+      return String(name || "").trim();
+    })
+    .filter(function (name) {
+      const key =
+        name.toLowerCase();
+
+      if (
+        !name ||
+        seen[key]
+      ) {
+        return false;
+      }
+
+      seen[key] = true;
+      return true;
+    })
+    .sort(function (first, second) {
+      return first.localeCompare(second);
+    });
+}
+
+
+/*************************************************
+ * COVERAGE INPUT
+ *************************************************/
+
+function buildWeeklyOSCoverageInputHtml_(
+  item,
+  dayIndex,
+  fieldName,
+  itemIndex,
+  isCastSection
+) {
+  item = item || {};
+
+  /*
+   * Crew keeps using the existing global people list.
+   */
+  if (!isCastSection) {
+    return (
+      '<div class="form-field">' +
+        '<label class="form-label">Coverage</label>' +
+
+        '<input type="text"' +
+          ' list="weeklyOSPeopleList"' +
+          ' value="' +
+            escapeAttribute(
+              item.coverage ||
+              ""
+            ) +
+          '"' +
+          ' placeholder="Choose or enter coverage"' +
+          ' oninput="updateOutField(' +
+            dayIndex +
+            ", '" +
+            fieldName +
+            "', " +
+            itemIndex +
+            ", 'coverage', this.value" +
+          ')">' +
+      "</div>"
+    );
+  }
+
+  /*
+   * Cast receives a unique datalist filtered by role.
+   */
+  const role =
+    item.role || "";
+
+  const options =
+    getWeeklyOSCastCoverageOptionsForRole_(
+      role
+    );
+
+  /*
+   * Preserve an existing saved/manual selection even
+   * if it is not currently returned by the role map.
+   */
+  const currentCoverage =
+    String(item.coverage || "").trim();
+
+  if (
+    currentCoverage &&
+    options.indexOf(currentCoverage) === -1
+  ) {
+    options.unshift(currentCoverage);
+  }
+
+  const listId =
+    "weeklyOSCastCoverage_" +
+    dayIndex +
+    "_" +
+    itemIndex;
+
+  const optionHtml =
+    options.map(
+      function (name) {
+        return (
+          '<option value="' +
+            escapeAttribute(name) +
+          '"></option>'
+        );
+      }
+    ).join("");
+
+  const helperText =
+    options.length
+      ? (
+        options.length +
+        " eligible cover" +
+        (options.length === 1 ? "" : "s") +
+        " found for " +
+        (role || "this role") +
+        "."
+      )
+      : (
+        "No role-specific covers found. " +
+        "A name may still be entered manually."
+      );
+
+  return (
+    '<div class="form-field">' +
+
+      '<label class="form-label">Coverage</label>' +
+
+      '<input type="text"' +
+        ' list="' +
+          escapeAttribute(listId) +
+        '"' +
+        ' value="' +
+          escapeAttribute(
+            currentCoverage
+          ) +
+        '"' +
+        ' placeholder="' +
+          escapeAttribute(
+            options.length
+              ? "Choose eligible cover"
+              : "Enter coverage manually"
+          ) +
+        '"' +
+        ' oninput="updateOutField(' +
+          dayIndex +
+          ", '" +
+          fieldName +
+          "', " +
+          itemIndex +
+          ", 'coverage', this.value" +
+        ')">' +
+
+      '<datalist id="' +
+        escapeAttribute(listId) +
+      '">' +
+        optionHtml +
+      "</datalist>" +
+
+      '<div class="source-list">' +
+        escapeHtml(helperText) +
+      "</div>" +
+
+    "</div>"
+  );
+}
+
+
+/*************************************************
+ * ROLE-SPECIFIC CAST COVERAGE
+ *************************************************/
+
+function getWeeklyOSCastCoverageOptionsForRole_(
+  role
+) {
+  const roleKey =
+    normalizeWeeklyOSCoverageRoleKey_(
+      role
+    );
+
+  if (!roleKey) {
+    return [];
+  }
+
+  const coverageMap =
+    bootstrap.castCoverageByRole ||
+    {};
+
+  const directOptions =
+    coverageMap[roleKey];
+
+  if (
+    Array.isArray(directOptions)
+  ) {
+    return uniqueWeeklyOSCoverageNames_(
+      directOptions
+    );
+  }
+
+  /*
+   * Cautious alias matching for common display
+   * differences such as:
+   *
+   * William Barfée → Barfee
+   * Vice Principal Panch → Panch
+   */
+  const matchingKey =
+    Object.keys(coverageMap).find(
+      function (key) {
+        return (
+          key === roleKey ||
+          key.indexOf(roleKey) !== -1 ||
+          roleKey.indexOf(key) !== -1
+        );
+      }
+    );
+
+  if (
+    matchingKey &&
+    Array.isArray(
+      coverageMap[matchingKey]
+    )
+  ) {
+    return uniqueWeeklyOSCoverageNames_(
+      coverageMap[matchingKey]
+    );
+  }
+
+  return [];
+}
+
+
+function normalizeWeeklyOSCoverageRoleKey_(
+  value
+) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[éèêë]/g, "e")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+
+function uniqueWeeklyOSCoverageNames_(
+  names
+) {
+  const seen = {};
+
+  return (
+    Array.isArray(names)
+      ? names
+      : []
+  )
+    .map(function (name) {
+      return String(name || "").trim();
+    })
+    .filter(function (name) {
+      const key =
+        name.toLowerCase();
+
+      if (
+        !name ||
+        seen[key]
+      ) {
+        return false;
+      }
+
+      seen[key] = true;
+      return true;
+    })
+    .sort(function (first, second) {
+      return first.localeCompare(second);
+    });
+}
+
+
+
+    function buildOutScopeOptions(
+      selectedValue
+    ) {
+      return (
+        bootstrap.outScopes || []
+      ).map(
+        function (option) {
+          return (
+            '<option value="' +
+              escapeAttribute(
+                option.value
+              ) +
+            '"' +
+            (
+              option.value ===
+              selectedValue
+                ? " selected"
+                : ""
+            ) +
+            ">" +
+              escapeHtml(
+                option.label
+              ) +
+            "</option>"
+          );
+        }
+      ).join("");
+    }
+
+
+    /*************************************************
+     * NOTES
+     *************************************************/
+
+    function buildNotesSection(
+      day,
+      dayIndex
+    ) {
+      const manualText =
+        (
+          day.notes || []
+        ).map(
+          function (note) {
+            return (
+              typeof note ===
+              "string"
+                ? note
+                : note.text
+            );
+          }
+        )
+        .filter(Boolean)
+        .join("\n");
+
+      const generatedNotes =
+        buildGeneratedDayNotes(
+          day
+        );
+
+      const generatedHtml =
+        generatedNotes.length
+          ? (
+            '<div class="generated-notes">' +
+              '<div class="generated-note-label">Automatically Generated</div>' +
+              generatedNotes.map(
+                function (note) {
+                  return (
+                    '<div class="generated-note">' +
+                      escapeHtml(note) +
+                    '</div>'
+                  );
+                }
+              ).join("") +
+            '</div>'
+          )
+          : "";
+
+      return (
+        '<section class="section">' +
+          '<div class="section-heading-row">' +
+            '<div class="section-title">Notes</div>' +
+          "</div>" +
+
+          generatedHtml +
+
+          '<textarea placeholder="Add any additional notes for this day…" oninput="updateNotes(' +
+            dayIndex +
+            ', this.value)">' +
+            escapeHtml(manualText) +
+          "</textarea>" +
+        "</section>"
+      );
+    }
+
+
+    function buildGeneratedDayNotes(
+      day
+    ) {
+      const notes = [];
+
+      (
+        day.crewOuts || []
+      ).forEach(
+        function (item) {
+          const outName =
+            abbreviateDisplayName(
+              item.person
+            );
+
+          let text =
+            "- " +
+            (
+              outName ||
+              item.person ||
+              "Crew member"
+            ) +
+            " OUT";
+
+          if (item.coverage) {
+            text +=
+              ", " +
+              item.coverage +
+              " IN";
+          }
+
+          if (item.department) {
+            text +=
+              " (" +
+              item.department +
+              ")";
+          }
+
+          if (
+            item.appliesTo &&
+            item.appliesTo !== "ALL"
+          ) {
+            text +=
+              " (" +
+              formatOutScopeForPreview(
+                item.appliesTo
+              ) +
+              ")";
+          }
+
+          notes.push(text);
+        }
+      );
+
+      (
+        day.pt || []
+      ).forEach(
+        function (item) {
+          const time =
+            [
+              item.startTime,
+              item.endTime
+            ]
+              .filter(Boolean)
+              .join("–");
+
+          let text =
+            "- PT";
+
+          if (time) {
+            text +=
+              " " +
+              time;
+          }
+
+          if (item.location) {
+            text +=
+              " (" +
+              item.location +
+              ")";
+          }
+
+          if (item.notes) {
+            text +=
+              " — " +
+              item.notes;
+          }
+
+          notes.push(text);
+        }
+      );
+
+      return notes;
+    }
+
+
+    function abbreviateDisplayName(
+      value
+    ) {
+      const text =
+        String(value || "")
+          .trim();
+
+      if (!text) {
+        return "";
+      }
+
+      if (
+        /^[^\s]+\s+[A-Z]\.$/.test(
+          text
+        )
+      ) {
+        return text;
+      }
+
+      const parts =
+        text.split(/\s+/);
+
+      if (parts.length < 2) {
+        return text;
+      }
+
+      return (
+        parts[0] +
+        " " +
+        parts[
+          parts.length - 1
+        ].charAt(0)
+          .toUpperCase() +
+        "."
+      );
+    }
+
+
+    function formatOutScopeForPreview(
+      scope
+    ) {
+      const labels = {
+        MAT:
+          "Mat ONLY",
+
+        EVE:
+          "Eve ONLY",
+
+        "MAT & EVE":
+          "Mat & Eve",
+
+        "REHEARSAL & PERFORMANCE":
+          "Rehearsal & Performance",
+
+        "PUT-IN & PERFORMANCE":
+          "Put-In & Performance"
+      };
+
+      return (
+        labels[
+          String(scope || "")
+            .toUpperCase()
+        ] ||
+        scope
+      );
+    }
+
+
+    /*************************************************
+     * REVIEW ROW
+     *************************************************/
+
+    function buildReviewRow(
+      day,
+      dayIndex
+    ) {
+      return (
+        '<div class="review-row">' +
+
+          '<label class="review-label">' +
+            '<input type="checkbox"' +
+            (
+              day.reviewed
+                ? " checked"
+                : ""
+            ) +
+            ' onchange="setDayReviewed(' +
+              dayIndex +
+              ', this.checked)">' +
+
+            "Mark this day reviewed" +
+          "</label>" +
+
+          '<span class="badge ' +
+            statusBadgeClass(
+              day.status
+            ) +
+          '">' +
+            escapeHtml(
+              formatLabel(
+                day.status
+              )
+            ) +
+          "</span>" +
+
+        "</div>"
+      );
+    }
+
+
+    /*************************************************
+     * OBSERVATIONS
+     *************************************************/
+    function buildDayAttentionSection(
+      day
+    ) {
+      const validation =
+        draft.validation || {};
+
+      const rawItems = []
+        .concat(validation.errors || [])
+        .concat(validation.warnings || [])
+        .filter(
+          function (item) {
+            return item.date === day.date;
+          }
+        );
+
+      const messages =
+        buildConsolidatedAttentionMessages(
+          day,
+          rawItems
+        );
+
+      if (!messages.length) {
+        return (
+          '<section class="section">' +
+            '<div class="ready-message">' +
+              "✓ No missing information detected for this day." +
+            '</div>' +
+          '</section>'
+        );
+      }
+
+      return (
+        '<section class="section">' +
+          '<div class="attention-section">' +
+            '<div class="attention-title">Needs Attention</div>' +
+            '<ul class="attention-list">' +
+              messages.map(
+                function (message) {
+                  return "<li>" + escapeHtml(message) + "</li>";
+                }
+              ).join("") +
+            '</ul>' +
+          '</div>' +
+        '</section>'
+      );
+    }
+
+
+    function buildConsolidatedAttentionMessages(
+      day,
+      rawItems
+    ) {
+      const messages = [];
+      const seen = {};
+
+      function add(message) {
+        const clean = String(message || "").trim();
+        const key = clean.toUpperCase();
+        if (!clean || seen[key]) return;
+        seen[key] = true;
+        messages.push(clean);
+      }
+
+      (day.performances || []).forEach(
+        function (performance) {
+          if (!performance.conductor) {
+            add(
+              (performance.performanceNumber
+                ? "Performance #" + performance.performanceNumber
+                : "Performance") +
+              ": choose conductor."
+            );
+          }
+        }
+      );
+
+      (day.castOuts || []).forEach(
+        function (item) {
+          const missing = [];
+          if (!item.role) missing.push("confirm role");
+          if (!item.coverage) missing.push("choose coverage");
+          if (missing.length) {
+            add((item.person || "Cast out") + ": " + missing.join(" and ") + ".");
+          }
+        }
+      );
+
+      (day.crewOuts || []).forEach(
+        function (item) {
+          if (!item.coverage) {
+            add(
+              (item.person || "Crew out") +
+              (item.department ? " (" + item.department + ")" : "") +
+              ": choose coverage."
+            );
+          }
+        }
+      );
+
+      (day.rehearsals || []).forEach(
+        function (item) {
+          if (item.requiresReview) {
+            add((item.title || "Rehearsal") + ": review details.");
+          }
+        }
+      );
+
+      (day.putIns || []).forEach(
+        function (item) {
+          if (item.requiresReview) {
+            add((item.title || "Put-In") + ": review details and assignments.");
+          }
+        }
+      );
+
+      rawItems.forEach(
+        function (item) {
+          const message = String(item.message || "");
+          const upper = message.toUpperCase();
+
+          if (
+            upper.indexOf("HAS NOT BEEN MARKED REVIEWED") >= 0 ||
+            upper.indexOf("DOES NOT HAVE A CONDUCTOR") >= 0 ||
+            upper.indexOf("COVERAGE IS MISSING") >= 0 ||
+            upper.indexOf("OUT STILL NEEDS REVIEW") >= 0 ||
+            upper.indexOf("ROLE IS MISSING") >= 0
+          ) {
+            return;
+          }
+
+          add(message);
+        }
+      );
+
+      return messages;
+    }
+
+
+    function renderObservations() {
+      const container =
+        document.getElementById(
+          "observationsContainer"
+        );
+
+      const items =
+        draft.observations || [];
+
+      if (!items.length) {
+        container.innerHTML =
+          '<div class="empty-state">' +
+            "Nothing unusual detected." +
+          "</div>";
+
+        return;
+      }
+
+      container.innerHTML =
+        items.map(
+          function (item) {
+            return (
+              '<div class="observation ' +
+                String(
+                  item.level ||
+                  "INFO"
+                ).toLowerCase() +
+              '">' +
+
+                '<div class="observation-title">' +
+                  escapeHtml(
+                    item.title ||
+                    "Observation"
+                  ) +
+                "</div>" +
+
+                '<div class="observation-detail">' +
+                  escapeHtml(
+                    item.detail ||
+                    ""
+                  ) +
+                "</div>" +
+
+              "</div>"
+            );
+          }
+        ).join("");
+    }
+
+
+    /*************************************************
+     * VALIDATION
+     *************************************************/
+
+    function renderValidation() {
+      const container =
+        document.getElementById(
+          "validationContainer"
+        );
+
+      const validation =
+        draft.validation || {
+          errors: [],
+          warnings: [],
+          info: [],
+          summary: {}
+        };
+
+      const errors =
+        validation.errors || [];
+
+      const warnings =
+        validation.warnings || [];
+
+      const info =
+        validation.info || [];
+
+      const summary =
+        '<div class="validation-summary">' +
+
+          '<div class="validation-stat error">' +
+            "<strong>" +
+              errors.length +
+            "</strong>" +
+            "<span>Errors</span>" +
+          "</div>" +
+
+          '<div class="validation-stat warning">' +
+            "<strong>" +
+              warnings.length +
+            "</strong>" +
+            "<span>Warnings</span>" +
+          "</div>" +
+
+          '<div class="validation-stat info">' +
+            "<strong>" +
+              info.length +
+            "</strong>" +
+            "<span>Info</span>" +
+          "</div>" +
+
+        "</div>";
+
+      const list = []
+        .concat(
+          errors.map(
+            function (item) {
+              return buildValidationItem(
+                item,
+                "error"
+              );
+            }
+          )
+        )
+        .concat(
+          warnings.map(
+            function (item) {
+              return buildValidationItem(
+                item,
+                "warning"
+              );
+            }
+          )
+        )
+        .concat(
+          info.slice(0, 5).map(
+            function (item) {
+              return buildValidationItem(
+                item,
+                "info"
+              );
+            }
+          )
+        );
+
+      container.innerHTML =
+        summary +
+        (
+          list.length
+            ? '<ul class="validation-list">' +
+                list.join("") +
+              "</ul>"
+            : '<div class="empty-state">Draft is ready to generate.</div>'
+        );
+    }
+
+
+    function buildValidationItem(
+      item,
+      className
+    ) {
+      return (
+        '<li class="validation-item ' +
+          className +
+        '">' +
+          escapeHtml(
+            item.message ||
+            ""
+          ) +
+        "</li>"
+      );
+    }
+
+
+    /*************************************************
+     * HISTORY
+     *************************************************/
+
+    function renderHistory() {
+      const container =
+        document.getElementById(
+          "historyContainer"
+        );
+
+      const history =
+        bootstrap.draftHistory || [];
+
+      if (!history.length) {
+        container.innerHTML =
+          '<div class="empty-state">' +
+            "No saved revisions yet." +
+          "</div>";
+
+        return;
+      }
+
+      container.innerHTML =
+        '<div class="history-list">' +
+          history.slice(0, 8).map(
+            function (item) {
+              return (
+                '<div class="history-item">' +
+                  '<div class="history-title">' +
+                    "Revision " +
+                    item.revision +
+                    " • " +
+                    escapeHtml(
+                      item.status ||
+                      ""
+                    ) +
+                  "</div>" +
+
+                  '<div class="history-detail">' +
+                    escapeHtml(
+                      formatDateTime(
+                        item.savedAt
+                      )
+                    ) +
+                  "</div>" +
+
+                  '<div style="margin-top:6px;">' +
+                    '<button class="btn small" onclick="restoreRevision(' +
+                      item.revision +
+                    ')">Restore</button>' +
+                  "</div>" +
+                "</div>"
+              );
+            }
+          ).join("") +
+        "</div>";
+    }
+
+
+    /*************************************************
+     * FIELD UPDATES
+     *************************************************/
+
+    function setDayReviewed(
+      dayIndex,
+      checked
+    ) {
+      draft.days[
+        dayIndex
+      ].reviewed =
+        Boolean(checked);
+
+      queueSave(true);
+    }
+
+
+    function updateOutField(
+      dayIndex,
+      fieldName,
+      itemIndex,
+      key,
+      value
+    ) {
+      const item =
+        draft.days[
+          dayIndex
+        ][
+          fieldName
+        ][
+          itemIndex
+        ];
+
+      item[key] =
+        value;
+
+      if (
+        key ===
+        "coverage"
+      ) {
+        item.requiresReview =
+          !String(value)
+            .trim();
+      }
+
+      queueSave(false);
+    }
+
+
+    function updateNotes(
+      dayIndex,
+      value
+    ) {
+      draft.days[
+        dayIndex
+      ].notes =
+        String(value)
+          .split("\n")
+          .map(
+            function (line) {
+              return line.trim();
+            }
+          )
+          .filter(Boolean)
+          .map(
+            function (line) {
+              return {
+                id:
+                  createClientId(),
+
+                text:
+                  line,
+
+                category:
+                  "GENERAL",
+
+                source:
+                  "Manual",
+
+                sourceRow:
+                  null
+              };
+            }
+          );
+
+      queueSave(false);
+    }
+
+
+    /*************************************************
+     * PERFORMANCE EDITOR
+     *************************************************/
+
+    function addPerformance(
+      dayIndex
+    ) {
+      const item = {
+        id:
+          createClientId(),
+
+        performanceNumber:
+          "",
+
+        label:
+          "",
+
+        time:
+          "",
+
+        showType:
+          "EVE",
+
+        conductor:
+          "",
+
+        guestSpeller:
+          "",
+
+        smConfirmed:
+          false,
+
+        source:
+          "Manual",
+
+        sourceRow:
+          null,
+
+        manuallyEdited:
+          true
+      };
+
+      openPerformanceModal(
+        dayIndex,
+        item,
+        null
+      );
+    }
+
+
+    function editPerformance(
+      dayIndex,
+      itemIndex
+    ) {
+      openPerformanceModal(
+        dayIndex,
+        deepClone(
+          draft.days[
+            dayIndex
+          ].performances[
+            itemIndex
+          ]
+        ),
+        itemIndex
+      );
+    }
+
+
+    function openPerformanceModal(
+      dayIndex,
+      item,
+      itemIndex
+    ) {
+      openModal(
+        itemIndex === null
+          ? "Add Performance"
+          : "Edit Performance",
+
+        '<div class="form-grid">' +
+
+          buildTextField(
+            "Performance Number",
+            "modalPerformanceNumber",
+            item.performanceNumber
+          ) +
+
+          buildTextField(
+            "Time",
+            "modalPerformanceTime",
+            item.time
+          ) +
+
+          buildSelectField(
+            "Show Type",
+            "modalPerformanceShowType",
+            [
+              {
+                value: "MAT",
+                label: "MAT"
+              },
+              {
+                value: "EVE",
+                label: "EVE"
+              }
+            ],
+            item.showType
+          ) +
+
+          buildTextField(
+            "Conductor",
+            "modalPerformanceConductor",
+            item.conductor
+          ) +
+
+          buildTextField(
+            "Guest Speller",
+            "modalPerformanceGuest",
+            item.guestSpeller
+          ) +
+
+          '<div class="form-field">' +
+            '<label class="form-label">SM Confirmed</label>' +
+            '<label class="checkbox-row">' +
+              '<input type="checkbox" id="modalPerformanceConfirmed"' +
+              (
+                item.smConfirmed
+                  ? " checked"
+                  : ""
+              ) +
+              ">" +
+              "Confirmed" +
+            "</label>" +
+          "</div>" +
+
+        "</div>",
+
+        function () {
+          const number =
+            valueOf(
+              "modalPerformanceNumber"
+            );
+
+          item.performanceNumber =
+            number;
+
+          item.label =
+            number
+              ? "PERFORMANCE #" +
+                number
+              : "PERFORMANCE";
+
+          item.time =
+            valueOf(
+              "modalPerformanceTime"
+            );
+
+          item.showType =
+            valueOf(
+              "modalPerformanceShowType"
+            );
+
+          item.conductor =
+            valueOf(
+              "modalPerformanceConductor"
+            );
+
+          item.guestSpeller =
+            valueOf(
+              "modalPerformanceGuest"
+            );
+
+          item.smConfirmed =
+            checkedOf(
+              "modalPerformanceConfirmed"
+            );
+
+          if (
+            itemIndex === null
+          ) {
+            draft.days[
+              dayIndex
+            ].performances.push(
+              item
+            );
+          } else {
+            draft.days[
+              dayIndex
+            ].performances[
+              itemIndex
+            ] = item;
+          }
+
+          closeModal();
+          queueSave(true);
+        }
+      );
+    }
+
+
+    /*************************************************
+     * DAY OFF
+     *************************************************/
+
+    function setDayOff(
+      dayIndex
+    ) {
+      draft.days[
+        dayIndex
+      ].dayOff = {
+        id:
+          createClientId(),
+
+        type:
+          "DAY_OFF",
+
+        title:
+          "AEA DAY OFF",
+
+        notes:
+          "",
+
+        source:
+          "Manual",
+
+        sourceRow:
+          null
+      };
+
+      queueSave(true);
+    }
+
+
+    function clearDayOff(
+      dayIndex
+    ) {
+      draft.days[
+        dayIndex
+      ].dayOff =
+        null;
+
+      queueSave(true);
+    }
+
+
+    /*************************************************
+     * REHEARSALS
+     *************************************************/
+
+    function addRehearsal(
+      dayIndex,
+      type
+    ) {
+      const defaults =
+        type ===
+        "UNDERSTUDY"
+          ? (
+            bootstrap
+              .rehearsalDefaults
+              .understudy
+          )
+          : (
+            bootstrap
+              .rehearsalDefaults
+              .newHire
+          );
+
+      const item = {
+        id:
+          createClientId(),
+
+        type:
+          type,
+
+        title:
+          defaults.title,
+
+        startTime:
+          "",
+
+        endTime:
+          "",
+
+        location:
+          defaults.location ||
+          "",
+
+        called:
+          deepClone(
+            defaults.called ||
+            []
+          ),
+
+        stageManagement:
+          [],
+
+        crewDepartments:
+          [],
+
+        rehearsalPianist:
+          "",
+
+        musicDirector:
+          "",
+
+        creativeStaff:
+          [],
+
+        notes:
+          "",
+
+        goldDividerBeforePerformance:
+          Boolean(
+            defaults
+              .goldDividerBeforePerformance
+          ),
+
+        requiresReview:
+          true,
+
+        canceled:
+          false,
+
+        source:
+          "Manual",
+
+        sourceRow:
+          null
+      };
+
+      openActivityModal(
+        dayIndex,
+        "rehearsals",
+        item,
+        null
+      );
+    }
+
+
+    /*************************************************
+     * MEETINGS / WORK CALLS / PUT-INS
+     *************************************************/
+
+    function addMeeting(
+      dayIndex
+    ) {
+      openActivityModal(
+        dayIndex,
+        "meetings",
+        {
+          id:
+            createClientId(),
+
+          title:
+            "Meeting",
+
+          startTime:
+            "",
+
+          endTime:
+            "",
+
+          location:
+            "",
+
+          called:
+            [],
+
+          notes:
+            "",
+
+          placement:
+            "ALONGSIDE",
+
+          replacesExistingCall:
+            false,
+
+          source:
+            "Manual",
+
+          sourceRow:
+            null
+        },
+        null
+      );
+    }
+
+
+    function addWorkCall(
+      dayIndex
+    ) {
+      openActivityModal(
+        dayIndex,
+        "workCalls",
+        {
+          id:
+            createClientId(),
+
+          title:
+            "Work Call",
+
+          startTime:
+            "",
+
+          endTime:
+            "",
+
+          location:
+            "",
+
+          called:
+            [],
+
+          notes:
+            "",
+
+          source:
+            "Manual",
+
+          sourceRow:
+            null
+        },
+        null
+      );
+    }
+
+
+    function addPutIn(
+      dayIndex
+    ) {
+      openActivityModal(
+        dayIndex,
+        "putIns",
+        {
+          id:
+            createClientId(),
+
+          number:
+            "",
+
+          title:
+            "Put-In",
+
+          startTime:
+            "",
+
+          endTime:
+            "",
+
+          location:
+            "Theatre",
+
+          crewCall:
+            "",
+
+          segments:
+            [],
+
+          assignments:
+            [],
+
+          guestSpellers:
+            [],
+
+          creativeTeam:
+            [],
+
+          notes:
+            "",
+
+          requiresReview:
+            true,
+
+          source:
+            "Manual",
+
+          sourceRow:
+            null
+        },
+        null
+      );
+    }
+
+
+    function editActivity(
+      dayIndex,
+      fieldName,
+      itemIndex
+    ) {
+      openActivityModal(
+        dayIndex,
+        fieldName,
+        deepClone(
+          draft.days[
+            dayIndex
+          ][
+            fieldName
+          ][
+            itemIndex
+          ]
+        ),
+        itemIndex
+      );
+    }
+
+
+    function openActivityModal(
+      dayIndex,
+      fieldName,
+      item,
+      itemIndex
+    ) {
+      if (fieldName === "putIns") {
+        openPutInModal(
+          dayIndex,
+          item,
+          itemIndex
+        );
+        return;
+      }
+
+      const titleMap = {
+        rehearsals:
+          "Rehearsal",
+
+        meetings:
+          "Meeting",
+
+        workCalls:
+          "Work Call",
+
+        putIns:
+          "Put-In"
+      };
+
+      const typeLabel =
+        titleMap[
+          fieldName
+        ] ||
+        "Activity";
+
+      let extraFields = "";
+
+      if (
+        fieldName ===
+        "rehearsals"
+      ) {
+        extraFields +=
+          buildSelectField(
+            "Rehearsal Type",
+            "modalActivityType",
+            bootstrap.rehearsalTypes,
+            item.type
+          );
+      }
+
+      if (
+        fieldName ===
+        "putIns"
+      ) {
+        extraFields +=
+          buildTextField(
+            "Put-In Number",
+            "modalPutInNumber",
+            item.number
+          );
+
+        extraFields +=
+          buildTextField(
+            "Crew Call",
+            "modalPutInCrewCall",
+            item.crewCall
+          );
+      }
+
+      openModal(
+        (
+          itemIndex === null
+            ? "Add "
+            : "Edit "
+        ) +
+        typeLabel,
+
+        '<div class="form-grid">' +
+
+          extraFields +
+
+          buildTextField(
+            "Title",
+            "modalActivityTitle",
+            item.title
+          ) +
+
+          buildTextField(
+            "Start Time",
+            "modalActivityStart",
+            item.startTime
+          ) +
+
+          buildTextField(
+            "End Time",
+            "modalActivityEnd",
+            item.endTime
+          ) +
+
+          buildTextField(
+            "Location",
+            "modalActivityLocation",
+            item.location
+          ) +
+
+          buildTextField(
+            "Called",
+            "modalActivityCalled",
+            (
+              item.called ||
+              []
+            ).join(", "),
+            true
+          ) +
+
+          buildTextareaField(
+            "Notes",
+            "modalActivityNotes",
+            item.notes
+          ) +
+
+          (
+            fieldName ===
+            "rehearsals" ||
+            fieldName ===
+            "putIns"
+              ? '<div class="form-field full">' +
+                  '<label class="checkbox-row">' +
+                    '<input type="checkbox" id="modalActivityReviewed"' +
+                    (
+                      !item.requiresReview
+                        ? " checked"
+                        : ""
+                    ) +
+                    ">" +
+                    "Details reviewed" +
+                  "</label>" +
+                "</div>"
+              : ""
+          ) +
+
+        "</div>",
+
+        function () {
+          item.title =
+            valueOf(
+              "modalActivityTitle"
+            );
+
+          item.startTime =
+            valueOf(
+              "modalActivityStart"
+            );
+
+          item.endTime =
+            valueOf(
+              "modalActivityEnd"
+            );
+
+          item.location =
+            valueOf(
+              "modalActivityLocation"
+            );
+
+          item.called =
+            splitList(
+              valueOf(
+                "modalActivityCalled"
+              )
+            );
+
+          item.notes =
+            valueOf(
+              "modalActivityNotes"
+            );
+
+          if (
+            fieldName ===
+            "rehearsals"
+          ) {
+            item.type =
+              valueOf(
+                "modalActivityType"
+              );
+
+            item.requiresReview =
+              !checkedOf(
+                "modalActivityReviewed"
+              );
+          }
+
+          if (
+            fieldName ===
+            "putIns"
+          ) {
+            item.number =
+              valueOf(
+                "modalPutInNumber"
+              );
+
+            item.crewCall =
+              valueOf(
+                "modalPutInCrewCall"
+              );
+
+            item.requiresReview =
+              !checkedOf(
+                "modalActivityReviewed"
+              );
+          }
+
+          if (
+            itemIndex === null
+          ) {
+            draft.days[
+              dayIndex
+            ][
+              fieldName
+            ].push(
+              item
+            );
+          } else {
+            draft.days[
+              dayIndex
+            ][
+              fieldName
+            ][
+              itemIndex
+            ] = item;
+          }
+
+          closeModal();
+          queueSave(true);
+        }
+      );
+    }
+
+
+    /*************************************************
+     * SPECIALIZED PUT-IN EDITOR
+     *************************************************/
+
+    function buildPutInActorOptions(
+      item,
+      assignment
+    ) {
+      const current = assignment.person || "";
+      const defaultPerson = assignment.defaultPerson || "";
+      const knownNewActors = getKnownNewActorsForRole(
+        item,
+        assignment.role
+      );
+      const swings = bootstrap.swingOptions || [];
+
+      const values = [];
+
+      [current, defaultPerson]
+        .concat(
+          knownNewActors.map(function (entry) {
+            return entry.person;
+          })
+        )
+        .concat(swings)
+        .forEach(function (name) {
+          if (
+            name &&
+            values.indexOf(name) < 0
+          ) {
+            values.push(name);
+          }
+        });
+
+      return values.map(function (name) {
+        return (
+          '<option value="' +
+            escapeAttribute(name) +
+          '"' +
+          (name === current ? " selected" : "") +
+          '>' +
+            escapeHtml(name) +
+          '</option>'
+        );
+      }).join("");
+    }
+
+
+    function getKnownNewActorsForRole(
+      item,
+      role
+    ) {
+      const roleKey = normalizeRoleKey(role);
+      const results = [];
+
+      (item.newActors || [])
+        .concat(bootstrap.newActorOptions || [])
+        .forEach(function (entry) {
+          if (
+            normalizeRoleKey(entry.role) === roleKey &&
+            entry.person
+          ) {
+            results.push(entry);
+          }
+        });
+
+      return results;
+    }
+
+
+    function handlePutInNewActorToggle(
+      assignmentIndex,
+      role
+    ) {
+      const checkbox = document.getElementById(
+        "modalPutInNew_" + assignmentIndex
+      );
+      const actorSelect = document.getElementById(
+        "modalPutInPerson_" + assignmentIndex
+      );
+
+      if (!checkbox || !actorSelect || !checkbox.checked) {
+        return;
+      }
+
+      const dayIndex = Number(
+        document.getElementById("modalRoot")
+          ? document.getElementById("modalRoot").dataset.dayIndex || -1
+          : -1
+      );
+
+      const itemIndex = Number(
+        document.getElementById("modalRoot")
+          ? document.getElementById("modalRoot").dataset.itemIndex || -1
+          : -1
+      );
+
+      let putIn = null;
+
+      if (
+        dayIndex >= 0 &&
+        draft.days[dayIndex] &&
+        itemIndex >= 0
+      ) {
+        putIn = draft.days[dayIndex].putIns[itemIndex];
+      }
+
+      const matches = getKnownNewActorsForRole(
+        putIn || { newActors: [] },
+        role
+      );
+
+      if (matches.length === 1) {
+        actorSelect.value = matches[0].person;
+      }
+    }
+
+
+    function normalizeRoleKey(value) {
+      return String(value || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^A-Za-z0-9]/g, "")
+        .toUpperCase();
+    }
+
+
+    function quoteJs(value) {
+      return JSON.stringify(String(value || ""));
+    }
+
+
+    function openPutInModal(
+      dayIndex,
+      item,
+      itemIndex
+    ) {
+      item.assignments =
+        Array.isArray(item.assignments)
+          ? item.assignments
+          : [];
+
+      item.newActors =
+        Array.isArray(item.newActors)
+          ? item.newActors
+          : [];
+
+      const assignmentRows =
+        item.assignments.length
+          ? item.assignments.map(
+              function (assignment, index) {
+                const actorOptions =
+                  buildPutInActorOptions(
+                    item,
+                    assignment
+                  );
+
+                return (
+                  '<div class="putin-assignment-row">' +
+                    '<div class="form-field">' +
+                      '<label class="form-label">Role</label>' +
+                      '<input type="text" id="modalPutInRole_' + index + '" value="' +
+                        escapeAttribute(assignment.role || "") +
+                      '" readonly>' +
+                    '</div>' +
+                    '<div class="form-field">' +
+                      '<label class="form-label">Actor</label>' +
+                      '<select id="modalPutInPerson_' + index + '">' +
+                        actorOptions +
+                      '</select>' +
+                    '</div>' +
+                    '<label class="checkbox-row putin-new-checkbox">' +
+                      '<input type="checkbox" id="modalPutInNew_' + index + '"' +
+                        (assignment.isNewActor ? " checked" : "") +
+                        ' onchange="handlePutInNewActorToggle(' + index + ', ' +
+                          quoteJs(assignment.role || "") +
+                        ')">' +
+                      ' New actor' +
+                    '</label>' +
+                  '</div>'
+                );
+              }
+            ).join("")
+          : '<div class="empty-state">Assignments will populate from Cast List after the draft is refreshed.</div>';
+
+      openModal(
+        itemIndex === null
+          ? "Add Put-In"
+          : "Edit Put-In",
+
+        '<div id="modalRoot" data-day-index="' + dayIndex + '" data-item-index="' + (itemIndex === null ? -1 : itemIndex) + '" class="form-grid">' +
+          buildTextField("Put-In Number", "modalPutInNumber", item.number) +
+          buildTextField("Crew Call", "modalPutInCrewCall", item.crewCall) +
+          buildTextField("Title", "modalPutInTitle", item.title || "PUT-IN") +
+          buildTextField("Start Time", "modalPutInStart", item.startTime) +
+          buildTextField("End Time", "modalPutInEnd", item.endTime) +
+          buildTextField("Location", "modalPutInLocation", item.location || "Theatre") +
+          '<div class="form-field full">' +
+            '<div class="putin-editor-heading">Onstage Assignments</div>' +
+            '<div class="putin-editor-help">Every onstage role is listed. Choose the actor and check New actor for incoming company members.</div>' +
+            '<div class="putin-assignment-list">' + assignmentRows + '</div>' +
+          '</div>' +
+          buildTextareaField("Notes", "modalPutInNotes", item.notes) +
+          '<div class="form-field full">' +
+            '<label class="checkbox-row">' +
+              '<input type="checkbox" id="modalPutInReviewed"' +
+                (!item.requiresReview ? " checked" : "") +
+              '> Details and assignments reviewed' +
+            '</label>' +
+          '</div>' +
+        '</div>',
+
+        function () {
+          item.number = valueOf("modalPutInNumber");
+          item.crewCall = valueOf("modalPutInCrewCall");
+          item.title = valueOf("modalPutInTitle") || "PUT-IN";
+          item.startTime = valueOf("modalPutInStart");
+          item.endTime = valueOf("modalPutInEnd");
+          item.location = valueOf("modalPutInLocation") || "Theatre";
+          item.notes = valueOf("modalPutInNotes");
+          item.requiresReview = !checkedOf("modalPutInReviewed");
+
+          item.newActors = [];
+
+          item.assignments = item.assignments.map(
+            function (assignment, index) {
+              const person = valueOf("modalPutInPerson_" + index);
+              const isNewActor = checkedOf("modalPutInNew_" + index);
+
+              if (isNewActor && person) {
+                item.newActors.push({
+                  id: createClientId(),
+                  person: person,
+                  role: assignment.role || "",
+                  source: "Manual",
+                  sourceRow: null
+                });
+              }
+
+              return Object.assign({}, assignment, {
+                person: person,
+                isNewActor: isNewActor,
+                manuallyEdited: true,
+                source: "Manual"
+              });
+            }
+          );
+
+          item.hasNewActors = item.newActors.length > 0;
+
+          if (itemIndex === null) {
+            draft.days[dayIndex].putIns.push(item);
+          } else {
+            draft.days[dayIndex].putIns[itemIndex] = item;
+          }
+
+          closeModal();
+          queueSave(true);
+        }
+      );
+    }
+
+
+    /*************************************************
+     * COMPANY EVENT EDITOR
+     *************************************************/
+
+    function addCompanyEvent(
+      dayIndex
+    ) {
+      openCompanyEventModal(
+        dayIndex,
+        {
+          id:
+            createClientId(),
+
+          type:
+            "OTHER",
+
+          title:
+            "",
+
+          people:
+            [],
+
+          startTime:
+            "",
+
+          endTime:
+            "",
+
+          location:
+            "",
+
+          notes:
+            "",
+
+          requiresReview:
+            false,
+
+          source:
+            "Manual",
+
+          sourceRow:
+            null
+        },
+        null
+      );
+    }
+
+
+    function editCompanyEvent(
+      dayIndex,
+      itemIndex
+    ) {
+      openCompanyEventModal(
+        dayIndex,
+        deepClone(
+          draft.days[
+            dayIndex
+          ].companyEvents[
+            itemIndex
+          ]
+        ),
+        itemIndex
+      );
+    }
+
+
+    function openCompanyEventModal(
+      dayIndex,
+      item,
+      itemIndex
+    ) {
+      openModal(
+        itemIndex === null
+          ? "Add Company Activity"
+          : "Edit Company Activity",
+
+        '<div class="form-grid">' +
+
+          buildSelectField(
+            "Type",
+            "modalCompanyType",
+            bootstrap.companyEventTypes,
+            item.type
+          ) +
+
+          buildTextField(
+            "Title",
+            "modalCompanyTitle",
+            item.title
+          ) +
+
+          buildTextField(
+            "People",
+            "modalCompanyPeople",
+            (
+              item.people ||
+              []
+            ).join(", "),
+            true
+          ) +
+
+          buildTextField(
+            "Start Time",
+            "modalCompanyStart",
+            item.startTime
+          ) +
+
+          buildTextField(
+            "End Time",
+            "modalCompanyEnd",
+            item.endTime
+          ) +
+
+          buildTextField(
+            "Location",
+            "modalCompanyLocation",
+            item.location
+          ) +
+
+          buildTextareaField(
+            "Notes",
+            "modalCompanyNotes",
+            item.notes
+          ) +
+
+          '<div class="form-field full">' +
+            '<label class="checkbox-row">' +
+              '<input type="checkbox" id="modalCompanyReviewed"' +
+              (
+                !item.requiresReview
+                  ? " checked"
+                  : ""
+              ) +
+              ">" +
+              "Details reviewed" +
+            "</label>" +
+          "</div>" +
+
+        "</div>",
+
+        function () {
+          item.type =
+            valueOf(
+              "modalCompanyType"
+            );
+
+          item.title =
+            valueOf(
+              "modalCompanyTitle"
+            );
+
+          item.people =
+            splitList(
+              valueOf(
+                "modalCompanyPeople"
+              )
+            );
+
+          item.startTime =
+            valueOf(
+              "modalCompanyStart"
+            );
+
+          item.endTime =
+            valueOf(
+              "modalCompanyEnd"
+            );
+
+          item.location =
+            valueOf(
+              "modalCompanyLocation"
+            );
+
+          item.notes =
+            valueOf(
+              "modalCompanyNotes"
+            );
+
+          item.requiresReview =
+            !checkedOf(
+              "modalCompanyReviewed"
+            );
+
+          if (
+            itemIndex === null
+          ) {
+            draft.days[
+              dayIndex
+            ].companyEvents.push(
+              item
+            );
+          } else {
+            draft.days[
+              dayIndex
+            ].companyEvents[
+              itemIndex
+            ] = item;
+          }
+
+          closeModal();
+          queueSave(true);
+        }
+      );
+    }
+
+
+
+    /*************************************************
+     * MANUAL OUT EDITOR
+     *
+     * Emergency draft-only add. This does not write
+     * back to Production Calendar or Crew Outs.
+     *************************************************/
+
+    function addManualOut(
+      dayIndex,
+      category
+    ) {
+      const isCrew =
+        category ===
+        "CREW";
+
+      const item = {
+        id:
+          createClientId(),
+
+        category:
+          category,
+
+        person:
+          "",
+
+        role:
+          "",
+
+        department:
+          "",
+
+        reason:
+          "",
+
+        type:
+          "",
+
+        approvalStatus:
+          "Manual Weekly Override",
+
+        numberOfPerformances:
+          null,
+
+        coverage:
+          "",
+
+        appliesTo:
+          "ALL",
+
+        appliesToRehearsal:
+          false,
+
+        appliesToPutIn:
+          false,
+
+        requiresReview:
+          true,
+
+        sources: [
+          "Manual Weekly Override"
+        ],
+
+        sourceRows: []
+      };
+
+      openManualOutModal(
+        dayIndex,
+        item,
+        isCrew
+      );
+    }
+
+
+    function openManualOutModal(
+      dayIndex,
+      item,
+      isCrew
+    ) {
+      const title =
+        isCrew
+          ? "Add Crew Out"
+          : "Add Cast Out";
+
+      const positionLabel =
+        isCrew
+          ? "Department / Track"
+          : "Role";
+
+      openModal(
+        title,
+
+        '<div class="form-grid">' +
+
+          '<div class="form-field">' +
+            '<label class="form-label">Person Out</label>' +
+            '<input type="text" id="modalOutPerson" list="weeklyOSPeopleList" placeholder="Choose or enter person">' +
+          '</div>' +
+
+          buildTextField(
+            positionLabel,
+            "modalOutPosition",
+            ""
+          ) +
+
+          buildSelectField(
+            "Applies To",
+            "modalOutScope",
+            bootstrap.outScopes || [],
+            "ALL"
+          ) +
+
+          '<div class="form-field">' +
+            '<label class="form-label">Person In</label>' +
+            '<input type="text" id="modalOutCoverage" list="weeklyOSPeopleList" placeholder="Choose or enter coverage">' +
+          '</div>' +
+
+          buildTextareaField(
+            "Reason / Notes",
+            "modalOutReason",
+            ""
+          ) +
+
+        '</div>',
+
+        function () {
+          const person =
+            valueOf(
+              "modalOutPerson"
+            );
+
+          if (!person) {
+            alert(
+              "Choose the person who is out."
+            );
+
+            return;
+          }
+
+          item.person =
+            person;
+
+          if (isCrew) {
+            item.department =
+              valueOf(
+                "modalOutPosition"
+              );
+          } else {
+            item.role =
+              valueOf(
+                "modalOutPosition"
+              );
+          }
+
+          item.appliesTo =
+            valueOf(
+              "modalOutScope"
+            ) ||
+            "ALL";
+
+          item.coverage =
+            valueOf(
+              "modalOutCoverage"
+            );
+
+          item.reason =
+            valueOf(
+              "modalOutReason"
+            );
+
+          item.requiresReview =
+            !item.coverage;
+
+          if (isCrew) {
+            draft.days[
+              dayIndex
+            ].crewOuts.push(
+              item
+            );
+          } else {
+            draft.days[
+              dayIndex
+            ].castOuts.push(
+              item
+            );
+          }
+
+          closeModal();
+          queueSave(true);
+        }
+      );
+    }
+
+
+    /*************************************************
+     * PT EDITOR
+     *************************************************/
+
+    function addPt(
+      dayIndex
+    ) {
+      openPtModal(
+        dayIndex,
+        {
+          id:
+            createClientId(),
+
+          startTime:
+            "",
+
+          endTime:
+            "",
+
+          location:
+            "Balcony",
+
+          notes:
+            "",
+
+          source:
+            "Manual",
+
+          sourceRow:
+            null
+        },
+        null
+      );
+    }
+
+
+    function editPt(
+      dayIndex,
+      itemIndex
+    ) {
+      openPtModal(
+        dayIndex,
+        deepClone(
+          draft.days[
+            dayIndex
+          ].pt[
+            itemIndex
+          ]
+        ),
+        itemIndex
+      );
+    }
+
+
+    function openPtModal(
+      dayIndex,
+      item,
+      itemIndex
+    ) {
+      openModal(
+        itemIndex === null
+          ? "Add PT"
+          : "Edit PT",
+
+        '<div class="form-grid">' +
+
+          buildTextField(
+            "Start Time",
+            "modalPtStart",
+            item.startTime
+          ) +
+
+          buildTextField(
+            "End Time",
+            "modalPtEnd",
+            item.endTime
+          ) +
+
+          buildTextField(
+            "Location",
+            "modalPtLocation",
+            item.location
+          ) +
+
+          buildTextareaField(
+            "Notes",
+            "modalPtNotes",
+            item.notes
+          ) +
+
+        "</div>",
+
+        function () {
+          item.startTime =
+            valueOf(
+              "modalPtStart"
+            );
+
+          item.endTime =
+            valueOf(
+              "modalPtEnd"
+            );
+
+          item.location =
+            valueOf(
+              "modalPtLocation"
+            );
+
+          item.notes =
+            valueOf(
+              "modalPtNotes"
+            );
+
+          if (
+            itemIndex === null
+          ) {
+            draft.days[
+              dayIndex
+            ].pt.push(
+              item
+            );
+          } else {
+            draft.days[
+              dayIndex
+            ].pt[
+              itemIndex
+            ] = item;
+          }
+
+          closeModal();
+          queueSave(true);
+        }
+      );
+    }
+
+
+    /*************************************************
+     * REMOVE ITEM
+     *************************************************/
+
+    function removeItem(
+      dayIndex,
+      fieldName,
+      itemIndex
+    ) {
+      if (
+        !confirm(
+          "Remove this item?"
+        )
+      ) {
+        return;
+      }
+
+      draft.days[
+        dayIndex
+      ][
+        fieldName
+      ].splice(
+        itemIndex,
+        1
+      );
+
+      queueSave(true);
+    }
+
+
+    /*************************************************
+     * AUTOSAVE
+     *************************************************/
+
+    function queueSave(
+      renderAfter
+    ) {
+      clearTimeout(
+        saveTimer
+      );
+
+      setFooterStatus(
+        "Unsaved changes…"
+      );
+
+      saveTimer =
+        setTimeout(
+          function () {
+            saveDraft(
+              renderAfter
+            );
+          },
+          700
+        );
+    }
+
+
+    function saveDraft(
+      renderAfter
+    ) {
+      setLoading(
+        true,
+        "Saving draft…"
+      );
+
+      google.script.run
+        .withSuccessHandler(
+          function (result) {
+            draft =
+              result.draft;
+
+            setLoading(
+              false
+            );
+
+            setFooterStatus(
+              "Saved " +
+              new Date()
+                .toLocaleTimeString()
+            );
+
+            if (
+              renderAfter
+            ) {
+              renderAll();
+            } else {
+              renderValidation();
+              renderObservations();
+            }
+          }
+        )
+        .withFailureHandler(
+          handleFailure
+        )
+        .weeklyOSUiSaveDraft(
+          draft
+        );
+    }
+
+
+    /*************************************************
+     * REFRESH
+     *************************************************/
+
+    function refreshDraft() {
+      if (
+        !confirm(
+          "Refresh the draft from Expanded Calendar, Production Calendar, PD/Vacation Tracker, Crew Outs, and Contact Sheet?\n\nManual activities, notes, review status, and coverage choices will be preserved where possible."
+        )
+      ) {
+        return;
+      }
+
+      setLoading(
+        true,
+        "Refreshing source data…"
+      );
+
+      google.script.run
+        .withSuccessHandler(
+          function (result) {
+            draft =
+              result.draft;
+
+            bootstrap =
+              result.bootstrap;
+
+            setLoading(
+              false
+            );
+
+            setFooterStatus(
+              result.message
+            );
+
+            renderAll();
+          }
+        )
+        .withFailureHandler(
+          handleFailure
+        )
+        .weeklyOSUiRefreshDraft();
+    }
+
+
+    /*************************************************
+     * GENERATE
+     *************************************************/
+
+    function generateSchedule() {
+      const validation =
+        draft.validation || {};
+
+      const errorCount =
+        (
+          validation.errors ||
+          []
+        ).length;
+
+      if (
+        errorCount > 0
+      ) {
+        alert(
+          "This draft still has " +
+          errorCount +
+          " blocking validation item(s).\n\nReview the Validation panel before generating."
+        );
+
+        return;
+      }
+
+      if (
+        !confirm(
+          "Generate the Weekly Schedule from this reviewed draft?"
+        )
+      ) {
+        return;
+      }
+
+      setLoading(
+        true,
+        "Generating Weekly Schedule…"
+      );
+
+      google.script.run
+        .withSuccessHandler(
+          function (result) {
+            draft =
+              result.draft ||
+              draft;
+
+            setLoading(
+              false
+            );
+
+            alert(
+              result.message +
+              (
+                result.sheetName
+                  ? "\n\n" +
+                    result.sheetName
+                  : ""
+              )
+            );
+
+            google.script.host.close();
+          }
+        )
+        .withFailureHandler(
+          handleFailure
+        )
+        .weeklyOSUiGenerate(
+          draft
+        );
+    }
+
+
+    /*************************************************
+     * WEEK PICKER
+     *************************************************/
+
+    function openWeekPicker() {
+      const savedDrafts =
+        bootstrap.savedDrafts ||
+        [];
+
+      const savedOptions =
+        savedDrafts.map(
+          function (item) {
+            return (
+              '<option value="' +
+                escapeAttribute(
+                  item.weekStart
+                ) +
+              '">' +
+                escapeHtml(
+                  formatDateLabel(
+                    item.weekStart
+                  )
+                ) +
+                " — " +
+                escapeHtml(
+                  item.status ||
+                  "IN_PROGRESS"
+                ) +
+              "</option>"
+            );
+          }
+        ).join("");
+
+      openModal(
+        "Choose WeeklyOS Week",
+
+        '<div class="form-grid">' +
+
+          '<div class="form-field full">' +
+            '<label class="form-label">Build or Open Week Starting</label>' +
+            '<input type="date" id="modalWeekStart" value="' +
+              escapeAttribute(
+                draft.weekStart
+              ) +
+            '">' +
+          "</div>" +
+
+          '<div class="form-field full">' +
+            '<label class="form-label">Saved Drafts</label>' +
+            '<select id="modalSavedDraft">' +
+              '<option value="">Select a saved draft…</option>' +
+              savedOptions +
+            "</select>" +
+          "</div>" +
+
+        "</div>",
+
+        function () {
+          const savedWeek =
+            valueOf(
+              "modalSavedDraft"
+            );
+
+          const selectedWeek =
+            savedWeek ||
+            valueOf(
+              "modalWeekStart"
+            );
+
+          if (!selectedWeek) {
+            alert(
+              "Choose a Monday date or saved draft."
+            );
+
+            return;
+          }
+
+          closeModal();
+
+          setLoading(
+            true,
+            "Opening WeeklyOS draft…"
+          );
+
+          google.script.run
+            .withSuccessHandler(
+              function (result) {
+                draft =
+                  result.draft;
+
+                bootstrap =
+                  result.bootstrap;
+
+                setLoading(
+                  false
+                );
+
+                renderAll();
+              }
+            )
+            .withFailureHandler(
+              handleFailure
+            )
+            .weeklyOSUiBuildDraft(
+              selectedWeek
+            );
+        }
+      );
+    }
+
+
+    /*************************************************
+     * RESTORE REVISION
+     *************************************************/
+
+    function restoreRevision(
+      revision
+    ) {
+      if (
+        !confirm(
+          "Restore revision " +
+          revision +
+          " as a new working revision?"
+        )
+      ) {
+        return;
+      }
+
+      setLoading(
+        true,
+        "Restoring revision…"
+      );
+
+      google.script.run
+        .withSuccessHandler(
+          function (result) {
+            draft =
+              result.draft;
+
+            bootstrap =
+              result.bootstrap;
+
+            setLoading(
+              false
+            );
+
+            setFooterStatus(
+              result.message
+            );
+
+            renderAll();
+          }
+        )
+        .withFailureHandler(
+          handleFailure
+        )
+        .weeklyOSUiRestoreDraftRevision(
+          draft.weekStart,
+          revision
+        );
+    }
+
+
+    /*************************************************
+     * MODAL
+     *************************************************/
+
+    function openModal(
+      title,
+      bodyHtml,
+      saveHandler
+    ) {
+      modalSaveHandler =
+        saveHandler;
+
+      document.getElementById(
+        "modalTitle"
+      ).textContent =
+        title;
+
+      document.getElementById(
+        "modalBody"
+      ).innerHTML =
+        bodyHtml;
+
+      document.getElementById(
+        "modalFooter"
+      ).innerHTML =
+        '<button class="btn" onclick="closeModal()">Cancel</button>' +
+        '<button class="btn primary" onclick="saveModal()">Save</button>';
+
+      document.getElementById(
+        "modalBackdrop"
+      ).classList.add(
+        "visible"
+      );
+    }
+
+
+    function closeModal() {
+      modalSaveHandler =
+        null;
+
+      document.getElementById(
+        "modalBackdrop"
+      ).classList.remove(
+        "visible"
+      );
+    }
+
+
+    function saveModal() {
+      if (
+        typeof modalSaveHandler ===
+        "function"
+      ) {
+        modalSaveHandler();
+      }
+    }
+
+
+    /*************************************************
+     * FORM BUILDERS
+     *************************************************/
+
+    function buildTextField(
+      label,
+      id,
+      value,
+      fullWidth
+    ) {
+      return (
+        '<div class="form-field ' +
+          (
+            fullWidth
+              ? "full"
+              : ""
+          ) +
+        '">' +
+          '<label class="form-label" for="' +
+            id +
+          '">' +
+            escapeHtml(label) +
+          "</label>" +
+
+          '<input type="text" id="' +
+            id +
+          '" value="' +
+            escapeAttribute(
+              value ||
+              ""
+            ) +
+          '">' +
+        "</div>"
+      );
+    }
+
+
+    function buildTextareaField(
+      label,
+      id,
+      value
+    ) {
+      return (
+        '<div class="form-field full">' +
+          '<label class="form-label" for="' +
+            id +
+          '">' +
+            escapeHtml(label) +
+          "</label>" +
+
+          '<textarea id="' +
+            id +
+          '">' +
+            escapeHtml(
+              value ||
+              ""
+            ) +
+          "</textarea>" +
+        "</div>"
+      );
+    }
+
+
+    function buildSelectField(
+      label,
+      id,
+      options,
+      selectedValue
+    ) {
+      const optionHtml =
+        (
+          options ||
+          []
+        ).map(
+          function (option) {
+            return (
+              '<option value="' +
+                escapeAttribute(
+                  option.value
+                ) +
+              '"' +
+              (
+                option.value ===
+                selectedValue
+                  ? " selected"
+                  : ""
+              ) +
+              ">" +
+                escapeHtml(
+                  option.label
+                ) +
+              "</option>"
+            );
+          }
+        ).join("");
+
+      return (
+        '<div class="form-field">' +
+          '<label class="form-label" for="' +
+            id +
+          '">' +
+            escapeHtml(label) +
+          "</label>" +
+
+          '<select id="' +
+            id +
+          '">' +
+            optionHtml +
+          "</select>" +
+        "</div>"
+      );
+    }
+
+
+    /*************************************************
+     * UTILITIES
+     *************************************************/
+
+    function valueOf(
+      id
+    ) {
+      const element =
+        document.getElementById(
+          id
+        );
+
+      return element
+        ? String(
+            element.value ||
+            ""
+          ).trim()
+        : "";
+    }
+
+
+    function checkedOf(
+      id
+    ) {
+      const element =
+        document.getElementById(
+          id
+        );
+
+      return Boolean(
+        element &&
+        element.checked
+      );
+    }
+
+
+    function splitList(
+      value
+    ) {
+      return String(
+        value ||
+        ""
+      )
+        .split(",")
+        .map(
+          function (item) {
+            return item.trim();
+          }
+        )
+        .filter(Boolean);
+    }
+
+
+    function createClientId() {
+      if (
+        window.crypto &&
+        typeof window.crypto
+          .randomUUID ===
+          "function"
+      ) {
+        return window.crypto
+          .randomUUID();
+      }
+
+      return (
+        "CLIENT_" +
+        Date.now() +
+        "_" +
+        Math.random()
+          .toString(36)
+          .slice(2)
+      );
+    }
+
+
+    function deepClone(
+      value
+    ) {
+      return JSON.parse(
+        JSON.stringify(
+          value
+        )
+      );
+    }
+
+
+    function statusBadgeClass(
+      value
+    ) {
+      const normalized =
+        String(
+          value ||
+          ""
+        ).toUpperCase();
+
+      if (
+        normalized ===
+        "READY"
+      ) {
+        return "ready";
+      }
+
+      if (
+        normalized ===
+          "NEEDS_REVIEW" ||
+        normalized ===
+          "UNREVIEWED"
+      ) {
+        return "review";
+      }
+
+      if (
+        normalized.indexOf(
+          "ERROR"
+        ) >= 0
+      ) {
+        return "error";
+      }
+
+      return "info";
+    }
+
+
+    function formatLabel(
+      value
+    ) {
+      return String(
+        value ||
+        ""
+      )
+        .toLowerCase()
+        .replace(
+          /_/g,
+          " "
+        )
+        .replace(
+          /\b\w/g,
+          function (
+            character
+          ) {
+            return character
+              .toUpperCase();
+          }
+        );
+    }
+
+
+    function formatDateLabel(
+      value
+    ) {
+      if (!value) {
+        return "";
+      }
+
+      const parts =
+        String(value)
+          .split("-");
+
+      if (
+        parts.length === 3
+      ) {
+        const date =
+          new Date(
+            Number(parts[0]),
+            Number(parts[1]) - 1,
+            Number(parts[2])
+          );
+
+        return date
+          .toLocaleDateString(
+            undefined,
+            {
+              month: "short",
+              day: "numeric",
+              year: "numeric"
+            }
+          );
+      }
+
+      return String(value);
+    }
+
+
+    function formatDateTime(
+      value
+    ) {
+      if (!value) {
+        return "";
+      }
+
+      const date =
+        new Date(value);
+
+      if (
+        isNaN(
+          date.getTime()
+        )
+      ) {
+        return String(value);
+      }
+
+      return date
+        .toLocaleString();
+    }
+
+
+    function escapeHtml(
+      value
+    ) {
+      return String(
+        value == null
+          ? ""
+          : value
+      )
+        .replace(
+          /&/g,
+          "&amp;"
+        )
+        .replace(
+          /</g,
+          "&lt;"
+        )
+        .replace(
+          />/g,
+          "&gt;"
+        )
+        .replace(
+          /"/g,
+          "&quot;"
+        )
+        .replace(
+          /'/g,
+          "&#039;"
+        );
+    }
+
+
+    function escapeAttribute(
+      value
+    ) {
+      return escapeHtml(
+        value
+      )
+        .replace(
+          /`/g,
+          "&#096;"
+        );
+    }
+
+
+    function setFooterStatus(
+      message
+    ) {
+      document.getElementById(
+        "footerStatus"
+      ).textContent =
+        message || "";
+    }
+
+
+    function setLoading(
+      visible,
+      message
+    ) {
+      const overlay =
+        document.getElementById(
+          "loadingOverlay"
+        );
+
+      overlay.classList.toggle(
+        "visible",
+        Boolean(visible)
+      );
+
+      if (
+        message
+      ) {
+        document.getElementById(
+          "loadingMessage"
+        ).textContent =
+          message;
+      }
+    }
+
+
+    function handleFailure(
+      error
+    ) {
+      setLoading(
+        false
+      );
+
+      const message =
+        error &&
+        error.message
+          ? error.message
+          : String(error);
+
+      setFooterStatus(
+        "Error: " +
+        message
+      );
+
+      alert(message);
+    }
+  </script>
+</body>
+</html>
