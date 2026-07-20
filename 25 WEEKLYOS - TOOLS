@@ -1,0 +1,1204 @@
+/**********************
+ * 25 WEEKLYOS - TOOLS
+ * Version: 2.1.0
+ *
+ * Safe modernization of the production Weekly Email tool.
+ * The existing sheet parser is preserved; formatting and
+ * routing improvements are layered on top.
+ *************************/
+
+const SIGN_UP_SHEET_URL = "https://docs.google.com/spreadsheets/d/1bk4ciJDNyjcV00yLPIzIvPyTKDLv9V4YYdZ8w0pDEpA/edit?gid=0#gid=0";
+
+const DRAFT_TO = "spellingbeestagemanagers@gmail.com";
+
+const WEEKLY_EMAIL_BLUE = "#0000CC";
+const WEEKLY_EMAIL_YELLOW = "#FFF475";
+
+const REGULAR_PERF_SCHEDULE = {
+  Monday: ["7p"],
+  Tuesday: [],
+  Wednesday: ["7p"],
+  Thursday: ["7p"],
+  Friday: ["7p"],
+  Saturday: ["2p", "7:30p"],
+  Sunday: ["2p", "7p"]
+};
+
+
+/* =========================================================
+ * PUBLIC ENTRY POINT
+ * ========================================================= */
+
+function createWeeklyEmailDraft() {
+  const sourceSheet = resolveWeeklyEmailSourceSheet_();
+
+  if (!DRAFT_TO) {
+    throw new Error("Add a recipient to DRAFT_TO at the top of the script first.");
+  }
+
+  const content = buildWeeklyEmailContent(sourceSheet);
+  const signature = getStageOSEmailSignature_();
+  const pdfBlob = getSheetPdfBlob(sourceSheet);
+
+  GmailApp.createDraft(
+    DRAFT_TO,
+    content.subject,
+    content.plainText + signature,
+    {
+      htmlBody: content.htmlBody + signatureToHtml_(signature),
+      attachments: [pdfBlob]
+    }
+  );
+
+  SpreadsheetApp.getUi().alert(
+    `Gmail draft created from "${sourceSheet.getName()}" with the PDF attached!`
+  );
+}
+
+
+/**
+ * Lets the Home/menu button work safely even when Home is active.
+ * If a Weekly Schedule sheet is active, it is used directly.
+ * Otherwise, choose the Weekly Schedule whose Monday is nearest today.
+ */
+function resolveWeeklyEmailSourceSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const active = ss.getActiveSheet();
+
+  if (active && /^Weekly Schedule\b/i.test(active.getName())) {
+    return active;
+  }
+
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+
+  const candidates = ss.getSheets()
+    .filter(sheet => /^Weekly Schedule\b/i.test(sheet.getName()))
+    .map(sheet => {
+      const values = sheet.getDataRange().getDisplayValues();
+      const dates = getWeekDatesFromHeaders(values);
+
+      if (!dates.length) return null;
+
+      const monday = new Date(
+        today.getFullYear(),
+        dates[0].monthNum - 1,
+        dates[0].dayNum,
+        12,
+        0,
+        0,
+        0
+      );
+
+      // Handle a December/January week near the year boundary.
+      if (monday.getTime() < today.getTime() - 180 * 86400000) {
+        monday.setFullYear(monday.getFullYear() + 1);
+      } else if (monday.getTime() > today.getTime() + 180 * 86400000) {
+        monday.setFullYear(monday.getFullYear() - 1);
+      }
+
+      return {
+        sheet,
+        distance: Math.abs(monday.getTime() - today.getTime())
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.distance - b.distance);
+
+  if (!candidates.length) {
+    throw new Error(
+      'Could not find a tab whose name begins with "Weekly Schedule".'
+    );
+  }
+
+  return candidates[0].sheet;
+}
+
+
+/* =========================================================
+ * BUILD CONTENT — EXISTING PARSER PRESERVED
+ * ========================================================= */
+
+function buildWeeklyEmailContent(sourceSheet) {
+  const values = sourceSheet.getDataRange().getDisplayValues();
+  const weekDates = getWeekDatesFromHeaders(values);
+
+  const sections = {
+    performances: {},
+    castOuts: [],
+    crewOuts: [],
+    onstage: [],
+    offsite: [],
+    pt: [],
+    trainings: [],
+    misc: [],
+    birthdays: [],
+    holidays: []
+  };
+
+  let currentDay = "";
+
+  for (let r = 0; r < values.length; r++) {
+    const row = values[r];
+    const colA = clean(row[0]);
+
+    const dayMatch = colA.match(
+      /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+([A-Za-z]+)\s+(\d{1,2})$/i
+    );
+
+    if (dayMatch) {
+      currentDay =
+        `${dayMatch[1]} ${getMonthNumber(dayMatch[2])}.` +
+        String(dayMatch[3]).padStart(2, "0");
+
+      const headerText = clean(row.join(" "));
+      addPerformance(headerText, currentDay, sections);
+      addHolidayOrBirthdayFromHeader(row, currentDay, sections);
+      continue;
+    }
+
+    if (!currentDay) continue;
+
+    const rowItems = getRowItems(row);
+
+    rowItems.forEach(item => {
+      addPerformance(item, currentDay, sections);
+      categorizeItem(item, currentDay, sections);
+    });
+  }
+
+  const perfInfo = buildPerformanceSchedule(sections.performances, weekDates);
+  const perfHeader = perfInfo.hasChange
+    ? "CHANGE IN PERF. SCHEDULE THIS WEEK:"
+    : "REG PERF. SCHEDULE THIS WEEK:";
+
+  const emailParts = [];
+
+  emailParts.push("Hello Spelling Bee Company,");
+  emailParts.push("");
+
+  if (weekDates.length >= 2) {
+    const first = weekDates[0];
+    const last = weekDates[weekDates.length - 1];
+
+    emailParts.push(
+      `Please find the Weekly Schedule for ${first.fullDate} - ${last.fullDate} attached and below.`
+    );
+    emailParts.push("");
+  }
+
+  emailParts.push("PLEASE NOTE:");
+  emailParts.push("");
+
+  addSection(emailParts, perfHeader, perfInfo.lines);
+
+  addSection(
+    emailParts,
+    "CAST OUTS:",
+    combineConsecutiveDateRanges_(dedupeLines(sections.castOuts))
+  );
+
+  addSection(
+    emailParts,
+    "CREW OUTS:",
+    joinSameDayWithSlashes_(dedupeLines(sections.crewOuts))
+  );
+
+  addSection(
+    emailParts,
+    "ONSTAGE REHEARSALS:",
+    groupSameDayLines(dedupeLines(sections.onstage))
+  );
+
+  addSection(
+    emailParts,
+    buildOffsiteHeader_(sections.offsite),
+    dedupeLines(sections.offsite)
+  );
+
+  const ptLines = dedupeLines(sections.pt);
+  if (SIGN_UP_SHEET_URL) ptLines.push("SIGN UP SHEET");
+  addSection(emailParts, "PT:", ptLines);
+
+  addSection(
+    emailParts,
+    "TRAININGS:",
+    combineConsecutiveDateRanges_(dedupeLines(sections.trainings))
+  );
+
+  addSection(
+    emailParts,
+    "MISC:",
+    joinSameDayWithSlashes_(dedupeLines(sections.misc))
+  );
+
+  addSection(emailParts, "BIRTHDAYS:", dedupeLines(sections.birthdays));
+  addSection(emailParts, "HOLIDAYS:", dedupeLines(sections.holidays));
+
+  emailParts.push("Please reach out with any questions or concerns.");
+
+  const plainText = emailParts.join("\n");
+
+  return {
+    plainText,
+    htmlBody: buildHtmlEmail(plainText),
+    subject: weekDates.length >= 2
+      ? `SPELLING BEE - Weekly Schedule - ${weekDates[0].fullDate} - ${weekDates[weekDates.length - 1].fullDate}`
+      : "SPELLING BEE - Weekly Schedule"
+  };
+}
+
+
+/* =========================================================
+ * HEADER NOTES
+ * ========================================================= */
+
+function addHolidayOrBirthdayFromHeader(row, currentDay, sections) {
+  const headerExtra = clean(row.slice(1, 5).join(" "));
+  const lower = headerExtra.toLowerCase();
+
+  if (!headerExtra) return;
+
+  if (lower.includes("birthday")) {
+    sections.birthdays.push(`- ${currentDay}: ${headerExtra}`);
+  }
+
+  const holiday = extractHoliday(headerExtra);
+  if (holiday) {
+    sections.holidays.push(`- ${currentDay}: ${holiday}`);
+  }
+}
+
+
+function extractHoliday(text) {
+  const lower = text.toLowerCase();
+
+  const knownHolidays = [
+    "New Year's Day",
+    "New Years Day",
+    "Martin Luther King Jr. Day",
+    "Martin Luther King, Jr. Day",
+    "MLK Day",
+    "Washington's Birthday",
+    "Washingtons Birthday",
+    "Presidents Day",
+    "President's Day",
+    "Memorial Day",
+    "Juneteenth",
+    "Juneteenth National Independence Day",
+    "Independence Day",
+    "Fourth of July",
+    "4th of July",
+    "Labor Day",
+    "Columbus Day",
+    "Indigenous Peoples' Day",
+    "Indigenous Peoples Day",
+    "Veterans Day",
+    "Veteran's Day",
+    "Thanksgiving",
+    "Thanksgiving Day",
+    "Christmas",
+    "Christmas Day",
+    "Christmas Eve",
+    "New Year's Eve",
+    "New Years Eve",
+    "Halloween",
+    "Valentine's Day",
+    "Valentines Day",
+    "Mother's Day",
+    "Mothers Day",
+    "Father's Day",
+    "Fathers Day",
+    "Easter",
+    "Good Friday",
+    "Palm Sunday",
+    "Ash Wednesday",
+    "Passover",
+    "Yom Kippur",
+    "Rosh Hashanah",
+    "Hanukkah",
+    "Chanukah",
+    "Diwali",
+    "Eid",
+    "Eid al-Fitr",
+    "Eid al-Adha",
+    "Flag Day"
+  ];
+
+  for (const holiday of knownHolidays) {
+    if (lower.includes(holiday.toLowerCase())) {
+      return holiday;
+    }
+  }
+
+  const holidayMatch = text.match(/HOLIDAY:?\s*(.+)$/i);
+  return holidayMatch ? holidayMatch[1].trim() : "";
+}
+
+
+/* =========================================================
+ * HTML FORMATTER
+ * ========================================================= */
+
+function buildHtmlEmail(plainText) {
+  let currentSection = "";
+
+  return plainText.split("\n").map(line => {
+    if (line === "") {
+      return '<div style="height:10px;"></div>';
+    }
+
+    if (line === "SIGN UP SHEET") {
+      return `<div><a href="${SIGN_UP_SHEET_URL}">SIGN UP SHEET</a></div>`;
+    }
+
+    if (isWeeklyEmailHeader_(line)) {
+      currentSection = line;
+      return (
+        '<div style="font-weight:bold; text-decoration:underline; ' +
+        `margin-top:14px;">${escapeHtml(line)}</div>`
+      );
+    }
+
+    if (currentSection === "CAST OUTS:" && line.startsWith("- ")) {
+      const castMatch = line.match(
+        /^(-\s+[A-Za-z]+\s+\d+\.\d+(?:\s+-\s+[A-Za-z]+\s+\d+\.\d+)?:)\s*(.*)$/
+      );
+
+      if (castMatch) {
+        return (
+          `<div><strong>${escapeHtml(castMatch[1])}</strong> ` +
+          `<span style="color:#FF0000;">${escapeHtml(castMatch[2])}</span></div>`
+        );
+      }
+    }
+
+    if (line.startsWith("   • ")) {
+      return (
+        '<div style="margin-left:24px;">• ' +
+        formatWeeklyInlineHtml_(
+          line.replace(/^   •\s*/, ""),
+          currentSection
+        ) +
+        "</div>"
+      );
+    }
+
+    return `<div>${formatWeeklyInlineHtml_(line, currentSection)}</div>`;
+  }).join("");
+}
+
+
+function isWeeklyEmailHeader_(line) {
+  if (line === "PLEASE NOTE:") return true;
+
+  return (
+    /^[A-Z0-9 .&/+’'()-]+:$/.test(line) &&
+    !line.startsWith("- ")
+  );
+}
+
+
+function formatWeeklyInlineHtml_(line, currentSection) {
+  const dateMatch = line.match(
+    /^(-\s+[A-Za-z]+\s+\d+\.\d+(?:\s+-\s+[A-Za-z]+\s+\d+\.\d+)?:)\s*(.*)$/
+  );
+
+  let prefix = "";
+  let body = line;
+
+  if (dateMatch) {
+    prefix = `<strong>${escapeHtml(dateMatch[1])}</strong> `;
+    body = dateMatch[2];
+  }
+
+  let bodyHtml = escapeHtml(body)
+    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+
+  const shouldBeBlue =
+    (
+      currentSection === "ONSTAGE REHEARSALS:" ||
+      /OFFSITE REHEARSALS:$/.test(currentSection) ||
+      currentSection === "MISC:"
+    ) &&
+    looksLikeNewActorContent_(body);
+
+  const shouldBeYellow =
+    (
+      currentSection === "ONSTAGE REHEARSALS:" ||
+      currentSection === "CHANGE IN PERF. SCHEDULE THIS WEEK:"
+    ) &&
+    looksLikeWeeklyChange_(body);
+
+  if (shouldBeYellow) {
+    bodyHtml =
+      `<span style="background-color:${WEEKLY_EMAIL_YELLOW};">` +
+      bodyHtml +
+      "</span>";
+  }
+
+  if (shouldBeBlue) {
+    bodyHtml =
+      `<span style="color:${WEEKLY_EMAIL_BLUE};">` +
+      bodyHtml +
+      "</span>";
+  }
+
+  return prefix + bodyHtml;
+}
+
+
+function looksLikeNewActorContent_(text) {
+  const lower = String(text || "").toLowerCase();
+
+  return (
+    lower.includes("new actor") ||
+    lower.includes("new hire") ||
+    lower.includes("first day on contract") ||
+    lower.includes("1st day on contract") ||
+    lower.includes("onboarding") ||
+    lower.includes("measurements") ||
+    lower.includes("alex n.") ||
+    lower.includes("nina w.") ||
+    lower.includes("alex newell") ||
+    lower.includes("nina white")
+  );
+}
+
+
+function looksLikeWeeklyChange_(text) {
+  const upper = String(text || "").toUpperCase();
+
+  return (
+    upper.includes("**CHANGE**") ||
+    upper.includes("ADD:") ||
+    upper.includes("ADD FULL CAST") ||
+    upper.includes("CONTINUE ONSTAGE") ||
+    upper.includes("AS U/S") ||
+    upper.includes("AS UNDERSTUDY")
+  );
+}
+
+
+/* Compatibility for any older callers. */
+function formatInlineHtml(line) {
+  return formatWeeklyInlineHtml_(line, "");
+}
+
+
+/* =========================================================
+ * PDF
+ * ========================================================= */
+
+function getSheetPdfBlob(sheet) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ssId = ss.getId();
+  const sheetId = sheet.getSheetId();
+
+  const url =
+    `https://docs.google.com/spreadsheets/d/${ssId}/export?` +
+    "format=pdf" +
+    `&gid=${sheetId}` +
+    "&size=letter" +
+    "&portrait=true" +
+    "&fitw=true" +
+    "&sheetnames=false" +
+    "&printtitle=false" +
+    "&pagenumbers=false" +
+    "&gridlines=false" +
+    "&fzr=false";
+
+  const response = UrlFetchApp.fetch(url, {
+    headers: {
+      Authorization: `Bearer ${ScriptApp.getOAuthToken()}`
+    }
+  });
+
+  return response
+    .getBlob()
+    .setName(`SPELLING BEE - ${sheet.getName()}.pdf`);
+}
+
+
+/* =========================================================
+ * WEEK DATES / PERFORMANCE SCHEDULE
+ * ========================================================= */
+
+function getWeekDatesFromHeaders(values) {
+  const foundDates = [];
+
+  values.forEach(row => {
+    const colA = clean(row[0]);
+    const match = colA.match(
+      /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+([A-Za-z]+)\s+(\d{1,2})$/i
+    );
+
+    if (match) {
+      foundDates.push({
+        dayName: match[1],
+        monthName: match[2],
+        dayNum: Number(match[3]),
+        monthNum: getMonthNumber(match[2])
+      });
+    }
+  });
+
+  if (foundDates.length === 0) return [];
+
+  const dayOrder = {
+    Monday: 0,
+    Tuesday: 1,
+    Wednesday: 2,
+    Thursday: 3,
+    Friday: 4,
+    Saturday: 5,
+    Sunday: 6
+  };
+
+  const monday = foundDates.find(d => d.dayName === "Monday") || foundDates[0];
+  const year = new Date().getFullYear();
+  const mondayDate = new Date(year, monday.monthNum - 1, monday.dayNum);
+
+  return Object.keys(dayOrder).map(dayName => {
+    const date = new Date(mondayDate);
+    date.setDate(mondayDate.getDate() + dayOrder[dayName]);
+
+    const monthName = getMonthName(date.getMonth() + 1);
+    const monthNum = date.getMonth() + 1;
+    const dayNum = date.getDate();
+
+    return {
+      dayName,
+      monthName,
+      dayNum,
+      monthNum,
+      label: `${dayName} ${monthNum}.${String(dayNum).padStart(2, "0")}`,
+      fullDate: `${dayName}, ${monthName} ${dayNum}`
+    };
+  });
+}
+
+
+function addPerformance(text, currentDay, sections) {
+  if (!/performance/i.test(text)) return;
+
+  if (!sections.performances[currentDay]) {
+    sections.performances[currentDay] = [];
+  }
+
+  const matches = [
+    ...text.matchAll(
+      /PERFORMANCE\s*#?\d*\s*-?\s*(\d{1,2}):(\d{2})\s*(AM|PM)/gi
+    )
+  ];
+
+  matches.forEach(match => {
+    const hour = Number(match[1]);
+    const minute = match[2];
+    const ampm = match[3].toUpperCase();
+
+    const suffix = ampm === "AM" ? "a" : "p";
+    const label = minute === "00"
+      ? `${hour}${suffix}`
+      : `${hour}:${minute}${suffix}`;
+
+    if (!sections.performances[currentDay].includes(label)) {
+      sections.performances[currentDay].push(label);
+    }
+  });
+}
+
+
+function buildPerformanceSchedule(performances, weekDates) {
+  let hasChange = false;
+
+  const lines = weekDates.map(day => {
+    const actual = performances[day.label] || [];
+    const regular = REGULAR_PERF_SCHEDULE[day.dayName] || [];
+
+    const changed =
+      actual.slice().sort().join("|") !==
+      regular.slice().sort().join("|");
+
+    if (changed) hasChange = true;
+
+    if (actual.length === 0) {
+      return `- ${day.label}: OFF${changed ? " **CHANGE**" : ""}`;
+    }
+
+    const display = actual.length === 1
+      ? actual[0]
+      : `${actual[0]} Mat & ${actual[1]} Eve`;
+
+    return `- ${day.label}: ${display}${changed ? " **CHANGE**" : ""}`;
+  });
+
+  return { lines, hasChange };
+}
+
+
+/* =========================================================
+ * ROW READING / CLASSIFICATION
+ * ========================================================= */
+
+function addSection(emailParts, header, lines) {
+  if (!header || !lines || lines.length === 0) return;
+
+  emailParts.push(header);
+  lines.forEach(line => emailParts.push(line));
+  emailParts.push("");
+}
+
+
+function getRowItems(row) {
+  const colA = String(row[0] || "").trim();
+  const isNotesRow = /^NOTES:?$/i.test(colA);
+
+  if (isNotesRow) {
+    const items = [];
+
+    row.forEach(cell => {
+      String(cell || "")
+        .replace(/^NOTES:\s*/i, "")
+        .split(/\n/g)
+        .map(part => clean(part))
+        .filter(Boolean)
+        .forEach(part => items.push(part));
+    });
+
+    return items;
+  }
+
+  const joined = clean(row.join(" "));
+  return joined ? [joined] : [];
+}
+
+
+function categorizeItem(text, currentDay, sections) {
+  const item = formatLine(text);
+  if (!item) return;
+
+  const lower = item.toLowerCase();
+  if (lower === "notes:") return;
+
+  // Put-Ins first because their internal text often contains OUT lines.
+  if (isPutInBlock(item)) {
+    sections.onstage.push(`- ${currentDay}: ${item}`);
+    return;
+  }
+
+  if (isCastOut(item)) {
+    sections.castOuts.push(`- ${currentDay}: ${formatCastOut(item)}`);
+    return;
+  }
+
+  if (isCrewOut(item)) {
+    sections.crewOuts.push(`- ${currentDay}: ${formatCrewOut(item)}`);
+    return;
+  }
+
+  if (/^pt\b/i.test(item)) {
+    sections.pt.push(`- ${currentDay}: ${item.replace(/^PT\s*/i, "")}`);
+    return;
+  }
+
+  if (lower.includes("offsite rehearsal")) {
+    sections.offsite.push(`- ${currentDay}: ${item}`);
+    return;
+  }
+
+  /*
+   * MISC must be checked before generic rehearsal detection.
+   * Otherwise "filming at rehearsal" becomes a rehearsal.
+   */
+  if (isWeeklyMiscItem_(item)) {
+    sections.misc.push(`- ${currentDay}: ${cleanMiscLine(item)}`);
+    return;
+  }
+
+  /*
+   * Training must be checked before rehearsal because some
+   * training descriptions mention rehearsal/show content.
+   */
+  if (
+    lower.includes("training") ||
+    lower.includes("shadowing") ||
+    lower.includes("brushing up") ||
+    lower.includes("mix observe") ||
+    lower.includes("multitrack") ||
+    lower.includes("partial mix") ||
+    lower.includes("mixing")
+  ) {
+    sections.trainings.push(`- ${currentDay}: ${item}`);
+    return;
+  }
+
+  if (lower.includes("rehearsal") && !lower.includes("watch show")) {
+    sections.onstage.push(`- ${currentDay}: ${item}`);
+    return;
+  }
+
+  if (lower.includes("birthday")) {
+    sections.birthdays.push(`- ${currentDay}: ${item}`);
+    return;
+  }
+
+  if (lower.includes("holiday") || extractHoliday(item)) {
+    const holiday = extractHoliday(item) || item;
+    sections.holidays.push(`- ${currentDay}: ${holiday}`);
+  }
+}
+
+
+function isWeeklyMiscItem_(text) {
+  const lower = String(text || "").toLowerCase();
+
+  return (
+    lower.includes("press") ||
+    lower.includes("serino coyne") ||
+    lower.includes("film videos") ||
+    lower.includes("filming") ||
+    lower.includes("social media promotional") ||
+    lower.includes("production check-in") ||
+    lower.includes("onboarding") ||
+    lower.includes("measurements") ||
+    lower.includes("watch show") ||
+    lower.includes("personal work") ||
+    lower.includes("meet & greet") ||
+    lower.includes("meet and greet") ||
+    lower.includes("postshow") ||
+    lower.includes("office show") ||
+    lower.includes("first day on contract") ||
+    lower.includes("1st day on contract")
+  );
+}
+
+
+function isPutInBlock(text) {
+  const lower = text.toLowerCase();
+
+  return (
+    lower.includes("understudy put-in") ||
+    lower.includes("understudy put in") ||
+    /put-?in\s*#\d+/i.test(text)
+  );
+}
+
+
+/* =========================================================
+ * SECTION NORMALIZATION
+ * ========================================================= */
+
+function cleanMiscLine(text) {
+  return String(text || "")
+    .replace(/\s+Wardrobe Crew Call.*$/i, "")
+    .trim();
+}
+
+
+function groupSameDayLines(lines) {
+  const grouped = {};
+  const order = [];
+
+  lines.forEach(line => {
+    const match = line.match(
+      /^- ([A-Za-z]+ \d{1,2}\.\d{2}):\s*(.+)$/
+    );
+
+    if (!match) {
+      order.push({ type: "raw", line });
+      return;
+    }
+
+    const date = match[1];
+    const text = match[2];
+
+    if (!grouped[date]) {
+      grouped[date] = [];
+      order.push({ type: "date", date });
+    }
+
+    grouped[date].push(text);
+  });
+
+  const output = [];
+
+  order.forEach(item => {
+    if (item.type === "raw") {
+      output.push(item.line);
+      return;
+    }
+
+    const items = grouped[item.date];
+
+    if (items.length === 1) {
+      output.push(`- ${item.date}: ${items[0]}`);
+    } else {
+      output.push(`- ${item.date}:`);
+      items.forEach(text => output.push(`   • ${text}`));
+    }
+  });
+
+  return output;
+}
+
+
+/**
+ * Crew/MISC convention:
+ * same date = one line joined with //
+ */
+function joinSameDayWithSlashes_(lines) {
+  const grouped = {};
+  const order = [];
+
+  lines.forEach(line => {
+    const match = line.match(
+      /^- ([A-Za-z]+ \d{1,2}\.\d{2}(?:\s+\((?:Mat|Eve|Mat\s*&\s*Eve)\))?):\s*(.+)$/
+    );
+
+    if (!match) {
+      order.push({ raw: line });
+      return;
+    }
+
+    const date = match[1];
+    const text = match[2];
+
+    if (!grouped[date]) {
+      grouped[date] = [];
+      order.push({ date });
+    }
+
+    grouped[date].push(text);
+  });
+
+  return order.map(item => {
+    if (item.raw) return item.raw;
+    return `- ${item.date}: ${grouped[item.date].join(" // ")}`;
+  });
+}
+
+
+/**
+ * Combine only truly consecutive dates with identical text.
+ * Nonconsecutive Monday/Wednesday/Friday items stay separate.
+ * Performance qualifiers remain part of the text comparison.
+ */
+function combineConsecutiveDateRanges_(lines) {
+  const dayOrder = {
+    Monday: 1,
+    Tuesday: 2,
+    Wednesday: 3,
+    Thursday: 4,
+    Friday: 5,
+    Saturday: 6,
+    Sunday: 7
+  };
+
+  const parsed = lines.map((line, index) => {
+    const match = line.match(
+      /^- ([A-Za-z]+) (\d{1,2})\.(\d{2})\s*: (.+)$/
+    );
+
+    if (!match) {
+      return { raw: line, index };
+    }
+
+    return {
+      index,
+      dayName: match[1],
+      monthNum: match[2],
+      dayNum: Number(match[3]),
+      dayOrder: dayOrder[match[1]],
+      text: String(match[4] || "").trim()
+    };
+  });
+
+  const byText = {};
+
+  parsed.forEach(item => {
+    if (item.raw) return;
+    if (!byText[item.text]) byText[item.text] = [];
+    byText[item.text].push(item);
+  });
+
+  const emitted = [];
+
+  Object.keys(byText).forEach(text => {
+    const group = byText[text].sort((a, b) => a.dayOrder - b.dayOrder);
+    let run = [group[0]];
+
+    const flushRun = () => {
+      if (!run.length) return;
+
+      const first = run[0];
+      const last = run[run.length - 1];
+
+      emitted.push({
+        index: first.index,
+        line: run.length === 1
+          ? `- ${first.dayName} ${first.monthNum}.${String(first.dayNum).padStart(2, "0")}: ${text}`
+          : `- ${first.dayName} ${first.monthNum}.${String(first.dayNum).padStart(2, "0")} - ${last.dayName} ${last.monthNum}.${String(last.dayNum).padStart(2, "0")}: ${text}`
+      });
+
+      run = [];
+    };
+
+    for (let i = 1; i < group.length; i++) {
+      if (group[i].dayOrder === group[i - 1].dayOrder + 1) {
+        run.push(group[i]);
+      } else {
+        flushRun();
+        run = [group[i]];
+      }
+    }
+
+    flushRun();
+  });
+
+  parsed
+    .filter(item => item.raw)
+    .forEach(item => emitted.push({ index: item.index, line: item.raw }));
+
+  return emitted
+    .sort((a, b) => a.index - b.index)
+    .map(item => item.line);
+}
+
+
+/* Compatibility alias for any other existing code. */
+function combineDateRanges(lines) {
+  return combineConsecutiveDateRanges_(lines);
+}
+
+
+function buildOffsiteHeader_(offsiteLines) {
+  const roles = [];
+  const rolePatterns = [
+    "Rona",
+    "Olive",
+    "Chip",
+    "Marcy",
+    "Leaf",
+    "Barfée",
+    "Barfee",
+    "Mitch",
+    "Panch",
+    "Schwartzy",
+    "Logainne",
+    "Comfort Counselor"
+  ];
+
+  (offsiteLines || []).forEach(line => {
+    rolePatterns.forEach(role => {
+      const pattern = new RegExp(`\\b${role}\\b`, "i");
+
+      if (pattern.test(line)) {
+        const normalized = /^barfee$/i.test(role) ? "Barfée" : role;
+        if (!roles.includes(normalized)) roles.push(normalized);
+      }
+    });
+  });
+
+  return roles.length
+    ? `NEW ${roles.map(role => role.toUpperCase()).join(" + ")} OFFSITE REHEARSALS:`
+    : "NEW ACTOR OFFSITE REHEARSALS:";
+}
+
+
+/* =========================================================
+ * OUT DETECTION / FORMATTING
+ * ========================================================= */
+
+function isCastOut(text) {
+  const lower = text.toLowerCase();
+
+  if (!lower.includes("out")) return false;
+
+  return (
+    lower.includes("mitch") ||
+    lower.includes("rona") ||
+    lower.includes("barfée") ||
+    lower.includes("barfee") ||
+    lower.includes("olive") ||
+    lower.includes("chip") ||
+    lower.includes("marcy") ||
+    lower.includes("logainne") ||
+    lower.includes("panch") ||
+    lower.includes("comfort counselor") ||
+    lower.includes("schwartzy") ||
+    /^[A-Za-z]+(?:\s+[A-Z]\.)?\s+OUT$/i.test(text)
+  );
+}
+
+
+function isCrewOut(text) {
+  const lower = text.toLowerCase();
+
+  const crewPatterns = [
+    /\bin as asm\b/,
+    /\bpsm\b/,
+    /\basm\b/,
+    /\bwardrobe\b/,
+    /\bspot\b/,
+    /\blx\b/,
+    /\blighting\b/,
+    /\bsound\b/,
+    /\ba1\b/,
+    /\ba2\b/,
+    /\bdeck\b/,
+    /\bprops\b/,
+    /\bboard\b/,
+    /\bcrew\b/
+  ];
+
+  return (
+    lower.includes("out") &&
+    crewPatterns.some(pattern => pattern.test(lower))
+  );
+}
+
+
+/**
+ * Weekly Email cast convention:
+ *   Lilli C. OUT, Rona = Vanessa M.
+ */
+function formatCastOut(text) {
+  let output = formatLine(text)
+    .replace(/^Cast Changes?\s*:?\s*/i, "");
+
+  // Convert "Vanessa M. IN as Rona" to "Rona = Vanessa M."
+  output = output.replace(
+    /([^,]+?)\s+IN\s+as\s+(Mitch|Rona|Barfée|Barfee|Olive|Chip|Marcy|Leaf|Logainne|Panch|Schwartzy|Comfort Counselor)(?=\s*(?:,|\(|$))/gi,
+    (match, cover, role) => {
+      const normalizedRole = /^barfee$/i.test(role) ? "Barfée" : role;
+      return `${normalizedRole} = ${clean(cover)}`;
+    }
+  );
+
+  return output;
+}
+
+
+function formatCrewOut(text) {
+  return formatLine(text);
+}
+
+
+/* =========================================================
+ * GENERAL HELPERS
+ * ========================================================= */
+
+function getHeaders() {
+  return [
+    "PLEASE NOTE:",
+    "REG PERF. SCHEDULE THIS WEEK:",
+    "CHANGE IN PERF. SCHEDULE THIS WEEK:",
+    "CAST OUTS:",
+    "CREW OUTS:",
+    "ONSTAGE REHEARSALS:",
+    "NEW ACTOR OFFSITE REHEARSALS:",
+    "PT:",
+    "TRAININGS:",
+    "MISC:",
+    "BIRTHDAYS:",
+    "HOLIDAYS:"
+  ];
+}
+
+
+function dedupeLines(lines) {
+  return [...new Set(lines)];
+}
+
+
+function clean(text) {
+  return String(text || "")
+    .replace(/^NOTES:\s*/i, "")
+    .replace(/^-+\s*/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+
+function cleanForRange(text) {
+  return String(text || "")
+    .replace(/\s+in the evenings\.?$/i, "")
+    .trim();
+}
+
+
+function formatLine(text) {
+  return clean(text);
+}
+
+
+function getMonthNumber(monthName) {
+  const months = {
+    January: 1,
+    February: 2,
+    March: 3,
+    April: 4,
+    May: 5,
+    June: 6,
+    July: 7,
+    August: 8,
+    September: 9,
+    October: 10,
+    November: 11,
+    December: 12
+  };
+
+  return months[monthName] || 6;
+}
+
+
+function getMonthName(monthNum) {
+  const months = [
+    "",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December"
+  ];
+
+  return months[monthNum];
+}
+
+
+function escapeHtml(text) {
+  return String(text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+
+/* =========================================================
+ * SAFE PREVIEW
+ * ========================================================= */
+
+function previewWeeklyEmailDraft_SAFE() {
+  const sourceSheet = resolveWeeklyEmailSourceSheet_();
+  const content = buildWeeklyEmailContent(sourceSheet);
+
+  Logger.log(`WEEKLY SOURCE SHEET: ${sourceSheet.getName()}`);
+  Logger.log("WEEKLY EMAIL PLAIN TEXT");
+  Logger.log(content.plainText);
+
+  SpreadsheetApp.getUi().alert(
+    `Preview built from "${sourceSheet.getName()}".\n\n` +
+    "No Gmail draft was created. Open the execution log to review it."
+  );
+
+  return content;
+}
