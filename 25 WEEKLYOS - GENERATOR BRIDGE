@@ -1,0 +1,57 @@
+/*************************************************
+ * 25 WEEKLYOS - GENERATOR BRIDGE
+ *
+ * Temporary bridge for boss review.
+ * Keeps the existing WeeklyOS popup Generate button
+ * functional while the final template writer is rebuilt.
+ *************************************************/
+
+function weeklyOSGenerateFromDraft_(draft) {
+  if (!draft) {
+    throw new Error(
+      "WeeklyOS cannot generate without a draft."
+    );
+  }
+
+  /*
+   * The popup saves immediately before calling this,
+   * but save again defensively so the review output
+   * always contains the latest selections.
+   */
+  weeklyOSRecalculateDraft_(draft);
+  weeklyOSSaveDraft(draft);
+
+  if (
+    typeof weeklyOSGenerateEmergencyReview !==
+    "function"
+  ) {
+    throw new Error(
+      "weeklyOSGenerateEmergencyReview is missing. " +
+      "Add the emergency review generator file first."
+    );
+  }
+
+  return weeklyOSGenerateEmergencyReview();
+}
+
+
+/*************************************************
+ * PUBLIC SAVED-DRAFT GENERATOR
+ *
+ * Keeps WeeklyOS().generate working too.
+ *************************************************/
+
+function weeklyOSGenerateFromSavedDraft() {
+  const draft =
+    weeklyOSGetDraft();
+
+  if (!draft) {
+    throw new Error(
+      "WeeklyOS could not find a saved draft to generate."
+    );
+  }
+
+  return weeklyOSGenerateFromDraft_(
+    draft
+  );
+}
