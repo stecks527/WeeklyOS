@@ -1,0 +1,1544 @@
+/*************************************************
+ * 25 WEEKLYOS - MODEL
+ * Version: 0.2.0
+ * Status: ACTIVE DEVELOPMENT
+ *
+ * Structured WeekModel used by WeeklyOS.
+ *
+ * WeeklyOS edits this model first.
+ * The Weekly Schedule sheet is generated only
+ * after the draft has been reviewed and approved.
+ *************************************************/
+
+
+/*************************************************
+ * CREATE WEEK DRAFT
+ *************************************************/
+
+function weeklyOSCreateWeekDraft_(weekStart) {
+  const start = weeklyOSFindMonday_(
+    weekStart || weeklyOSNextMonday_()
+  );
+
+  const end = weeklyOSAddDays_(start, 6);
+
+  const draft = {
+    schemaVersion: 2,
+
+    id: weeklyOSUuid_(),
+
+    revision: 1,
+
+    status: "IN_PROGRESS",
+
+    createdAt: weeklyOSNowIso_(),
+
+    updatedAt: weeklyOSNowIso_(),
+
+    weekStart: weeklyOSDateKey_(start),
+
+    weekEnd: weeklyOSDateKey_(end),
+
+    title:
+      "Build Weekly Schedule — " +
+      weeklyOSFormatDate_(start, "MMMM d") +
+      "–" +
+      weeklyOSFormatDate_(end, "d, yyyy"),
+
+    sourceStatus: {
+      expandedCalendar:
+        weeklyOSCreateSourceStatus_(
+          "Expanded Calendar"
+        ),
+
+      productionCalendar:
+        weeklyOSCreateSourceStatus_(
+          "Production Calendar"
+        ),
+
+      pdVacationTracker:
+        weeklyOSCreateSourceStatus_(
+          "PD/Vacation Tracker"
+        ),
+
+      crewOuts:
+        weeklyOSCreateSourceStatus_(
+          "Crew Outs"
+        ),
+
+      contactSheet:
+        weeklyOSCreateSourceStatus_(
+          "Contact Sheet"
+        ),
+
+      newHireActivity:
+        weeklyOSCreateSourceStatus_(
+          "New-hire activity"
+        )
+    },
+
+    days: [],
+
+    observations: [],
+
+    validation: {
+      isValid: false,
+      errors: [],
+      warnings: []
+    },
+
+    metadata: {
+      generatedSheetId: null,
+      generatedSheetName: null,
+      generatedAt: null,
+      lastSourceRefreshAt: null
+    }
+  };
+
+  for (let offset = 0; offset < 7; offset++) {
+    draft.days.push(
+      weeklyOSCreateDayDraft_(
+        weeklyOSAddDays_(start, offset),
+        offset
+      )
+    );
+  }
+
+  return draft;
+}
+
+
+/*************************************************
+ * CREATE SOURCE STATUS
+ *************************************************/
+
+function weeklyOSCreateSourceStatus_(label) {
+  return {
+    label: label,
+    found: false,
+    status: "NOT_CHECKED",
+    details: "",
+    checkedAt: null
+  };
+}
+
+
+/*************************************************
+ * CREATE DAY
+ *************************************************/
+
+function weeklyOSCreateDayDraft_(date, index) {
+  const dateKey =
+    weeklyOSDateKey_(date);
+
+  return {
+    id:
+      "DAY_" + dateKey,
+
+    index: index,
+
+    date: dateKey,
+
+    dayName:
+      weeklyOSFormatDate_(
+        date,
+        "EEEE"
+      ),
+
+    dateLabel:
+      weeklyOSFormatDate_(
+        date,
+        "EEEE, MMMM d"
+      ),
+
+    status:
+      "NEEDS_REVIEW",
+
+    statusLabels: [],
+
+    confidence: 0,
+
+    reviewed: false,
+
+    dayOff: null,
+
+    performances: [],
+
+    rehearsals: [],
+
+    meetings: [],
+
+    workCalls: [],
+
+    putIns: [],
+
+    companyEvents: [],
+
+    castOuts: [],
+
+    crewOuts: [],
+
+    pt: [],
+
+    holidays: [],
+
+    notes: [],
+
+    observations: [],
+
+    sources: {
+      expandedCalendar: false,
+      productionCalendar: false,
+      pdVacationTracker: false,
+      crewOuts: false,
+      contactSheet: false,
+      googleCalendar: false,
+      manual: false
+    }
+  };
+}
+
+
+/*************************************************
+ * CREATE DAY OFF
+ *************************************************/
+
+function weeklyOSCreateDayOff_(input) {
+  input = input || {};
+
+  return {
+    id:
+      input.id ||
+      weeklyOSUuid_(),
+
+    type:
+      input.type ||
+      "DAY_OFF",
+
+    title:
+      weeklyOSNormalizeText_(
+        input.title ||
+        "Day Off"
+      ),
+
+    notes:
+      weeklyOSNormalizeText_(
+        input.notes
+      ),
+
+    source:
+      input.source ||
+      "Expanded Calendar",
+
+    sourceRow:
+      input.sourceRow ||
+      null
+  };
+}
+
+
+/*************************************************
+ * CREATE PERFORMANCE
+ *************************************************/
+
+function weeklyOSCreatePerformance_(input) {
+  input = input || {};
+
+  return {
+    id:
+      input.id ||
+      weeklyOSUuid_(),
+
+    performanceNumber:
+      weeklyOSNormalizeText_(
+        input.performanceNumber
+      ),
+
+    label:
+      weeklyOSNormalizeText_(
+        input.label
+      ),
+
+    time:
+      weeklyOSNormalizeText_(
+        input.time
+      ),
+
+    showType:
+      weeklyOSNormalizeText_(
+        input.showType
+      ),
+
+    conductor:
+      weeklyOSNormalizeText_(
+        input.conductor
+      ),
+
+    guestSpeller:
+      weeklyOSNormalizeText_(
+        input.guestSpeller
+      ),
+
+    smConfirmed:
+      Boolean(
+        input.smConfirmed
+      ),
+
+    source:
+      input.source ||
+      "Expanded Calendar",
+
+    sourceRow:
+      input.sourceRow ||
+      null,
+
+    manuallyEdited:
+      Boolean(
+        input.manuallyEdited
+      )
+  };
+}
+
+
+/*************************************************
+ * CREATE REHEARSAL
+ *************************************************/
+
+function weeklyOSCreateRehearsal_(input) {
+  input = input || {};
+
+  return {
+    id:
+      input.id ||
+      weeklyOSUuid_(),
+
+    type:
+      input.type ||
+      "OTHER",
+
+    title:
+      weeklyOSNormalizeText_(
+        input.title ||
+        "Rehearsal"
+      ),
+
+    startTime:
+      weeklyOSNormalizeText_(
+        input.startTime
+      ),
+
+    endTime:
+      weeklyOSNormalizeText_(
+        input.endTime
+      ),
+
+    location:
+      weeklyOSNormalizeText_(
+        input.location
+      ),
+
+    called:
+      weeklyOSNormalizeStringArray_(
+        input.called
+      ),
+
+    stageManagement:
+      weeklyOSNormalizeStringArray_(
+        input.stageManagement
+      ),
+
+    crewDepartments:
+      weeklyOSNormalizeStringArray_(
+        input.crewDepartments
+      ),
+
+    rehearsalPianist:
+      weeklyOSNormalizeText_(
+        input.rehearsalPianist
+      ),
+
+    musicDirector:
+      weeklyOSNormalizeText_(
+        input.musicDirector
+      ),
+
+    creativeStaff:
+      weeklyOSNormalizeStringArray_(
+        input.creativeStaff
+      ),
+
+    notes:
+      weeklyOSNormalizeText_(
+        input.notes
+      ),
+
+    goldDividerBeforePerformance:
+      Boolean(
+        input.goldDividerBeforePerformance
+      ),
+
+    requiresReview:
+      input.requiresReview !== false,
+
+    canceled:
+      Boolean(
+        input.canceled
+      ),
+
+    source:
+      input.source ||
+      "Manual",
+
+    sourceRow:
+      input.sourceRow ||
+      null
+  };
+}
+
+
+/*************************************************
+ * CREATE MEETING
+ *************************************************/
+
+function weeklyOSCreateMeeting_(input) {
+  input = input || {};
+
+  return {
+    id:
+      input.id ||
+      weeklyOSUuid_(),
+
+    title:
+      weeklyOSNormalizeText_(
+        input.title ||
+        "Meeting"
+      ),
+
+    startTime:
+      weeklyOSNormalizeText_(
+        input.startTime
+      ),
+
+    endTime:
+      weeklyOSNormalizeText_(
+        input.endTime
+      ),
+
+    location:
+      weeklyOSNormalizeText_(
+        input.location
+      ),
+
+    called:
+      weeklyOSNormalizeStringArray_(
+        input.called
+      ),
+
+    notes:
+      weeklyOSNormalizeText_(
+        input.notes
+      ),
+
+    placement:
+      input.placement ||
+      "ALONGSIDE",
+
+    replacesExistingCall:
+      Boolean(
+        input.replacesExistingCall
+      ),
+
+    source:
+      input.source ||
+      "Manual",
+
+    sourceRow:
+      input.sourceRow ||
+      null
+  };
+}
+
+
+/*************************************************
+ * CREATE WORK CALL
+ *************************************************/
+
+function weeklyOSCreateWorkCall_(input) {
+  input = input || {};
+
+  return {
+    id:
+      input.id ||
+      weeklyOSUuid_(),
+
+    title:
+      weeklyOSNormalizeText_(
+        input.title ||
+        "Work Call"
+      ),
+
+    startTime:
+      weeklyOSNormalizeText_(
+        input.startTime
+      ),
+
+    endTime:
+      weeklyOSNormalizeText_(
+        input.endTime
+      ),
+
+    location:
+      weeklyOSNormalizeText_(
+        input.location
+      ),
+
+    called:
+      weeklyOSNormalizeStringArray_(
+        input.called
+      ),
+
+    notes:
+      weeklyOSNormalizeText_(
+        input.notes
+      ),
+
+    source:
+      input.source ||
+      "Manual",
+
+    sourceRow:
+      input.sourceRow ||
+      null
+  };
+}
+
+
+/*************************************************
+ * CREATE PUT-IN
+ *************************************************/
+
+function weeklyOSCreatePutIn_(input) {
+  input = input || {};
+
+  return {
+    id:
+      input.id ||
+      weeklyOSUuid_(),
+
+    number:
+      weeklyOSNormalizeText_(
+        input.number
+      ),
+
+    title:
+      weeklyOSNormalizeText_(
+        input.title ||
+        "Put-In"
+      ),
+
+    startTime:
+      weeklyOSNormalizeText_(
+        input.startTime
+      ),
+
+    endTime:
+      weeklyOSNormalizeText_(
+        input.endTime
+      ),
+
+    location:
+      weeklyOSNormalizeText_(
+        input.location
+      ),
+
+    crewCall:
+      weeklyOSNormalizeText_(
+        input.crewCall
+      ),
+
+    segments:
+      Array.isArray(input.segments)
+        ? input.segments
+        : [],
+
+    assignments:
+      Array.isArray(input.assignments)
+        ? input.assignments
+        : [],
+
+    guestSpellers:
+      weeklyOSNormalizeStringArray_(
+        input.guestSpellers
+      ),
+
+    creativeTeam:
+      weeklyOSNormalizeStringArray_(
+        input.creativeTeam
+      ),
+
+    notes:
+      weeklyOSNormalizeText_(
+        input.notes
+      ),
+
+    requiresReview:
+      input.requiresReview !== false,
+
+    source:
+      input.source ||
+      "Manual",
+
+    sourceRow:
+      input.sourceRow ||
+      null
+  };
+}
+
+
+/*************************************************
+ * CREATE PUT-IN SEGMENT
+ *************************************************/
+
+function weeklyOSCreatePutInSegment_(input) {
+  input = input || {};
+
+  return {
+    id:
+      input.id ||
+      weeklyOSUuid_(),
+
+    title:
+      weeklyOSNormalizeText_(
+        input.title ||
+        "Put-In Segment"
+      ),
+
+    startTime:
+      weeklyOSNormalizeText_(
+        input.startTime
+      ),
+
+    endTime:
+      weeklyOSNormalizeText_(
+        input.endTime
+      ),
+
+    location:
+      weeklyOSNormalizeText_(
+        input.location
+      ),
+
+    called:
+      weeklyOSNormalizeStringArray_(
+        input.called
+      ),
+
+    notes:
+      weeklyOSNormalizeText_(
+        input.notes
+      )
+  };
+}
+
+
+/*************************************************
+ * CREATE COMPANY EVENT
+ *
+ * Examples:
+ * - New hire start
+ * - First performance
+ * - Scheduled return
+ * - Final performance
+ * - Broadway in Bryant Park
+ * - Watch Show
+ * - Onboarding / Measurements
+ *************************************************/
+
+function weeklyOSCreateCompanyEvent_(input) {
+  input = input || {};
+
+  return {
+    id:
+      input.id ||
+      weeklyOSUuid_(),
+
+    type:
+      input.type ||
+      "OTHER",
+
+    title:
+      weeklyOSNormalizeText_(
+        input.title
+      ),
+
+    people:
+      weeklyOSNormalizeStringArray_(
+        input.people
+      ),
+
+    startTime:
+      weeklyOSNormalizeText_(
+        input.startTime
+      ),
+
+    endTime:
+      weeklyOSNormalizeText_(
+        input.endTime
+      ),
+
+    location:
+      weeklyOSNormalizeText_(
+        input.location
+      ),
+
+    notes:
+      weeklyOSNormalizeText_(
+        input.notes
+      ),
+
+    requiresReview:
+      Boolean(
+        input.requiresReview
+      ),
+
+    source:
+      input.source ||
+      "Production Calendar",
+
+    sourceRow:
+      input.sourceRow ||
+      null
+  };
+}
+
+
+/*************************************************
+ * CREATE CAST OR CREW OUT
+ *************************************************/
+
+function weeklyOSCreateOut_(input) {
+  input = input || {};
+
+  return {
+    id:
+      input.id ||
+      weeklyOSUuid_(),
+
+    category:
+      input.category ||
+      "CAST",
+
+    person:
+      weeklyOSNormalizeText_(
+        input.person
+      ),
+
+    role:
+      weeklyOSNormalizeText_(
+        input.role
+      ),
+
+    department:
+      weeklyOSNormalizeText_(
+        input.department
+      ),
+
+    reason:
+      weeklyOSNormalizeText_(
+        input.reason
+      ),
+
+    type:
+      weeklyOSNormalizeText_(
+        input.type
+      ),
+
+    approvalStatus:
+      weeklyOSNormalizeText_(
+        input.approvalStatus
+      ),
+
+    numberOfPerformances:
+      input.numberOfPerformances == null
+        ? null
+        : Number(input.numberOfPerformances),
+
+    coverage:
+      weeklyOSNormalizeText_(
+        input.coverage
+      ),
+
+    appliesTo:
+      input.appliesTo ||
+      "ALL",
+
+    appliesToRehearsal:
+      Boolean(
+        input.appliesToRehearsal
+      ),
+
+    appliesToPutIn:
+      Boolean(
+        input.appliesToPutIn
+      ),
+
+    requiresReview:
+      input.requiresReview !== false,
+
+    sources:
+      weeklyOSNormalizeStringArray_(
+        input.sources ||
+        [input.source || "Unknown"]
+      ),
+
+    sourceRows:
+      Array.isArray(input.sourceRows)
+        ? input.sourceRows
+        : (
+          input.sourceRow
+            ? [input.sourceRow]
+            : []
+        )
+  };
+}
+
+
+/*************************************************
+ * CREATE PT
+ *************************************************/
+
+function weeklyOSCreatePt_(input) {
+  input = input || {};
+
+  return {
+    id:
+      input.id ||
+      weeklyOSUuid_(),
+
+    startTime:
+      weeklyOSNormalizeText_(
+        input.startTime
+      ),
+
+    endTime:
+      weeklyOSNormalizeText_(
+        input.endTime
+      ),
+
+    location:
+      weeklyOSNormalizeText_(
+        input.location ||
+        "Balcony"
+      ),
+
+    notes:
+      weeklyOSNormalizeText_(
+        input.notes
+      ),
+
+    source:
+      input.source ||
+      "Expanded Calendar",
+
+    sourceRow:
+      input.sourceRow ||
+      null
+  };
+}
+
+
+/*************************************************
+ * CREATE HOLIDAY
+ *************************************************/
+
+function weeklyOSCreateHoliday_(input) {
+  input = input || {};
+
+  return {
+    id:
+      input.id ||
+      weeklyOSUuid_(),
+
+    title:
+      weeklyOSNormalizeText_(
+        input.title
+      ),
+
+    notes:
+      weeklyOSNormalizeText_(
+        input.notes
+      ),
+
+    source:
+      input.source ||
+      "Production Calendar",
+
+    sourceRow:
+      input.sourceRow ||
+      null
+  };
+}
+
+
+/*************************************************
+ * CREATE NOTE
+ *************************************************/
+
+function weeklyOSCreateNote_(input) {
+  input = input || {};
+
+  return {
+    id:
+      input.id ||
+      weeklyOSUuid_(),
+
+    text:
+      weeklyOSNormalizeText_(
+        input.text
+      ),
+
+    category:
+      input.category ||
+      "GENERAL",
+
+    source:
+      input.source ||
+      "Manual",
+
+    sourceRow:
+      input.sourceRow ||
+      null
+  };
+}
+
+
+/*************************************************
+ * CREATE OBSERVATION
+ *************************************************/
+
+function weeklyOSCreateObservation_(input) {
+  input = input || {};
+
+  return {
+    id:
+      input.id ||
+      weeklyOSUuid_(),
+
+    level:
+      input.level ||
+      "INFO",
+
+    date:
+      input.date ||
+      "",
+
+    title:
+      weeklyOSNormalizeText_(
+        input.title
+      ),
+
+    detail:
+      weeklyOSNormalizeText_(
+        input.detail
+      ),
+
+    action:
+      weeklyOSNormalizeText_(
+        input.action
+      ),
+
+    source:
+      input.source ||
+      "",
+
+    resolved:
+      Boolean(
+        input.resolved
+      )
+  };
+}
+
+
+/*************************************************
+ * FIND DAY
+ *************************************************/
+
+function weeklyOSGetDay_(draft, dateValue) {
+  if (
+    !draft ||
+    !Array.isArray(draft.days)
+  ) {
+    return null;
+  }
+
+  const dateKey =
+    weeklyOSDateKey_(
+      dateValue
+    );
+
+  return draft.days.find(
+    function (day) {
+      return day.date === dateKey;
+    }
+  ) || null;
+}
+
+
+/*************************************************
+ * RECALCULATE FULL DRAFT
+ *************************************************/
+
+function weeklyOSRecalculateDraft_(draft) {
+  if (!draft) {
+    throw new Error(
+      "WeeklyOS cannot recalculate an empty draft."
+    );
+  }
+
+  draft.updatedAt =
+    weeklyOSNowIso_();
+
+  draft.days =
+    Array.isArray(draft.days)
+      ? draft.days
+      : [];
+
+  draft.days.forEach(
+    function (day) {
+      weeklyOSRecalculateDay_(day);
+    }
+  );
+
+  const existingObservations =
+    Array.isArray(draft.observations)
+      ? draft.observations
+      : [];
+
+  const calculatedObservations =
+    weeklyOSCollectObservations_(
+      draft
+    );
+
+  draft.observations =
+    weeklyOSMergeObservations_(
+      existingObservations,
+      calculatedObservations
+    );
+
+  draft.validation =
+    weeklyOSValidateDraft(
+      draft
+    );
+
+  return draft;
+}
+
+
+/*************************************************
+ * RECALCULATE DAY
+ *************************************************/
+
+function weeklyOSRecalculateDay_(day) {
+  weeklyOSEnsureDayModel_(day);
+
+  const labels = [];
+  const issues = [];
+
+  if (day.dayOff) {
+    labels.push("NO_PERFORMANCE");
+    labels.push("DAY_OFF");
+  } else if (!day.performances.length) {
+    labels.push("NO_PERFORMANCE");
+  } else if (day.performances.length > 1) {
+    labels.push("TWO_SHOW_DAY");
+  } else {
+    labels.push("STANDARD");
+  }
+
+  if (
+    day.rehearsals.length ||
+    day.meetings.length ||
+    day.workCalls.length ||
+    day.putIns.length
+  ) {
+    labels.push("SCHEDULE_CHANGE");
+  }
+
+  if (day.rehearsals.some(function (item) {
+    return item.type === "NEW_HIRE";
+  })) {
+    labels.push("NEW_HIRE_REHEARSAL");
+  }
+
+  if (day.putIns.length) {
+    labels.push("PUT_IN");
+  }
+
+  if (day.companyEvents.length) {
+    labels.push("COMPANY_ACTIVITY");
+  }
+
+  if (
+    day.castOuts.length ||
+    day.crewOuts.length
+  ) {
+    labels.push("OUTS_DETECTED");
+  }
+
+  if (day.pt.length) {
+    labels.push("PT");
+  }
+
+  if (day.holidays.length) {
+    labels.push("HOLIDAY");
+  }
+
+  if (day.rehearsals.some(function (item) {
+    return item.requiresReview;
+  })) {
+    issues.push(
+      "Rehearsal details need review."
+    );
+  }
+
+  if (day.putIns.some(function (item) {
+    return item.requiresReview;
+  })) {
+    issues.push(
+      "Put-In details need review."
+    );
+  }
+
+  if (day.companyEvents.some(function (item) {
+    return item.requiresReview;
+  })) {
+    issues.push(
+      "Company activity needs review."
+    );
+  }
+
+  if (day.castOuts.some(function (item) {
+    return (
+      item.requiresReview &&
+      !item.coverage
+    );
+  })) {
+    issues.push(
+      "Cast coverage is incomplete."
+    );
+  }
+
+  if (day.crewOuts.some(function (item) {
+    return (
+      item.requiresReview &&
+      !item.coverage
+    );
+  })) {
+    issues.push(
+      "Crew coverage is incomplete."
+    );
+  }
+
+  if (day.rehearsals.some(function (item) {
+    return (
+      item.type === "NEW_HIRE" &&
+      !item.location &&
+      !item.canceled
+    );
+  })) {
+    issues.push(
+      "New-hire rehearsal location is missing."
+    );
+  }
+
+  if (day.performances.some(function (item) {
+    return !item.conductor;
+  })) {
+    issues.push(
+      "A performance conductor is missing."
+    );
+  }
+
+  if (issues.length) {
+    labels.push("NEEDS_REVIEW");
+    day.status = "NEEDS_REVIEW";
+  } else if (day.reviewed) {
+    day.status = "READY";
+  } else {
+    day.status = "UNREVIEWED";
+  }
+
+  const sourceChecks = [
+    day.sources.expandedCalendar,
+    day.sources.productionCalendar,
+    day.sources.pdVacationTracker,
+    day.sources.crewOuts
+  ].filter(Boolean).length;
+
+  let confidence =
+    35 +
+    sourceChecks * 12;
+
+  if (
+    day.performances.length ||
+    day.dayOff
+  ) {
+    confidence += 10;
+  }
+
+  if (!issues.length) {
+    confidence += 7;
+  }
+
+  if (day.reviewed) {
+    confidence += 10;
+  }
+
+  day.statusLabels =
+    weeklyOSUnique_(
+      labels
+    );
+
+  day.confidence =
+    Math.min(
+      100,
+      confidence
+    );
+
+  day.observations =
+    weeklyOSUnique_(
+      issues
+    );
+
+  return day;
+}
+
+
+/*************************************************
+ * ENSURE COMPLETE DAY MODEL
+ *************************************************/
+
+function weeklyOSEnsureDayModel_(day) {
+  const arrayFields = [
+    "performances",
+    "rehearsals",
+    "meetings",
+    "workCalls",
+    "putIns",
+    "companyEvents",
+    "castOuts",
+    "crewOuts",
+    "pt",
+    "holidays",
+    "notes",
+    "observations",
+    "statusLabels"
+  ];
+
+  arrayFields.forEach(
+    function (fieldName) {
+      day[fieldName] =
+        Array.isArray(day[fieldName])
+          ? day[fieldName]
+          : [];
+    }
+  );
+
+  day.sources =
+    day.sources || {};
+
+  const sourceFields = [
+    "expandedCalendar",
+    "productionCalendar",
+    "pdVacationTracker",
+    "crewOuts",
+    "contactSheet",
+    "googleCalendar",
+    "manual"
+  ];
+
+  sourceFields.forEach(
+    function (fieldName) {
+      day.sources[fieldName] =
+        Boolean(
+          day.sources[fieldName]
+        );
+    }
+  );
+
+  if (day.dayOff === undefined) {
+    day.dayOff = null;
+  }
+
+  return day;
+}
+
+
+/*************************************************
+ * COLLECT "THINGS I NOTICED"
+ *************************************************/
+
+function weeklyOSCollectObservations_(draft) {
+  const observations = [];
+
+  draft.days.forEach(
+    function (day) {
+      day.observations.forEach(
+        function (detail) {
+          if (!detail) return;
+
+          observations.push(
+            weeklyOSCreateObservation_({
+              level: "WARNING",
+              date: day.date,
+              title: day.dateLabel,
+              detail: detail,
+              source: "WeeklyOS validation"
+            })
+          );
+        }
+      );
+
+      day.performances.forEach(
+        function (performance) {
+          if (performance.guestSpeller) {
+            observations.push(
+              weeklyOSCreateObservation_({
+                level: "INFO",
+                date: day.date,
+                title: "Guest Speller detected",
+                detail:
+                  performance.guestSpeller +
+                  (
+                    performance.performanceNumber
+                      ? " — Performance #" +
+                        performance.performanceNumber
+                      : ""
+                  ),
+                source: performance.source
+              })
+            );
+          }
+        }
+      );
+
+      day.companyEvents.forEach(
+        function (event) {
+          observations.push(
+            weeklyOSCreateObservation_({
+              level:
+                event.requiresReview
+                  ? "WARNING"
+                  : "INFO",
+
+              date:
+                day.date,
+
+              title:
+                event.title ||
+                weeklyOSCompanyEventLabel_(
+                  event.type
+                ),
+
+              detail:
+                event.people.length
+                  ? event.people.join(", ")
+                  : event.notes,
+
+              source:
+                event.source
+            })
+          );
+        }
+      );
+
+      if (day.putIns.length) {
+        observations.push(
+          weeklyOSCreateObservation_({
+            level: "INFO",
+            date: day.date,
+            title: "Put-In detected",
+            detail:
+              day.putIns.length +
+              " Put-In item(s) scheduled.",
+            source: "WeeklyOS draft"
+          })
+        );
+      }
+
+      if (day.pt.length) {
+        observations.push(
+          weeklyOSCreateObservation_({
+            level: "INFO",
+            date: day.date,
+            title: "PT scheduled",
+            detail:
+              day.pt.map(function (item) {
+                return [
+                  item.startTime,
+                  item.endTime
+                ]
+                  .filter(Boolean)
+                  .join("–");
+              }).join(", "),
+            source: "Expanded Calendar"
+          })
+        );
+      }
+    }
+  );
+
+  return observations;
+}
+
+
+/*************************************************
+ * COMPANY EVENT LABEL
+ *************************************************/
+
+function weeklyOSCompanyEventLabel_(type) {
+  const labels = {
+    NEW_HIRE_START:
+      "New hire start",
+
+    FIRST_PERFORMANCE:
+      "First performance",
+
+    SCHEDULED_RETURN:
+      "Scheduled return",
+
+    FINAL_PERFORMANCE:
+      "Final performance",
+
+    WATCH_SHOW:
+      "Watch Show",
+
+    ONBOARDING:
+      "Onboarding / Measurements",
+
+    SPECIAL_EVENT:
+      "Special event",
+
+    COMPANY_MEETING:
+      "Company meeting",
+
+    OTHER:
+      "Company activity"
+  };
+
+  return (
+    labels[type] ||
+    labels.OTHER
+  );
+}
+
+
+/*************************************************
+ * MERGE OBSERVATIONS
+ *************************************************/
+
+function weeklyOSMergeObservations_(
+  existing,
+  incoming
+) {
+  const merged = [];
+  const seen = {};
+
+  []
+    .concat(
+      Array.isArray(existing)
+        ? existing
+        : []
+    )
+    .concat(
+      Array.isArray(incoming)
+        ? incoming
+        : []
+    )
+    .forEach(
+      function (item) {
+        if (!item) return;
+
+        const key =
+          weeklyOSObservationKey_(
+            item
+          );
+
+        if (seen[key]) return;
+
+        seen[key] = true;
+        merged.push(item);
+      }
+    );
+
+  return merged;
+}
+
+
+/*************************************************
+ * OBSERVATION KEY
+ *************************************************/
+
+function weeklyOSObservationKey_(item) {
+  if (
+    typeof item === "string"
+  ) {
+    return item;
+  }
+
+  return [
+    item.date || "",
+    item.title || "",
+    item.detail || "",
+    item.source || ""
+  ].join("|");
+}
+
+
+/*************************************************
+ * NORMALIZE STRING ARRAY
+ *************************************************/
+
+function weeklyOSNormalizeStringArray_(values) {
+  if (!Array.isArray(values)) {
+    if (!values) return [];
+
+    values =
+      String(values)
+        .split(",");
+  }
+
+  return weeklyOSUniqueStrings_(
+    values
+  );
+}
+
+
+/*************************************************
+ * UNIQUE VALUES
+ *************************************************/
+
+function weeklyOSUnique_(values) {
+  const seen = {};
+
+  return (
+    Array.isArray(values)
+      ? values
+      : []
+  ).filter(
+    function (value) {
+      const key =
+        value &&
+        typeof value === "object"
+          ? weeklyOSObservationKey_(value)
+          : String(value);
+
+      if (seen[key]) {
+        return false;
+      }
+
+      seen[key] = true;
+      return true;
+    }
+  );
+}
